@@ -2300,19 +2300,3 @@ func filterColumns(columnNames []string, extendData mydump.ExtendColumnData, ign
 	return filteredColumns, extendValueDatums
 }
 
-func openReader(ctx context.Context, fileMeta mydump.SourceFileMeta, store storage.ExternalStorage) (
-	reader storage.ReadSeekCloser, err error) {
-	switch {
-	case fileMeta.Type == mydump.SourceTypeParquet:
-		reader, err = mydump.OpenParquetReader(ctx, store, fileMeta.Path, fileMeta.FileSize)
-	case fileMeta.Compression != mydump.CompressionNone:
-		compressType, err2 := mydump.ToStorageCompressType(fileMeta.Compression)
-		if err2 != nil {
-			return nil, err2
-		}
-		reader, err = storage.WithCompression(store, compressType).Open(ctx, fileMeta.Path)
-	default:
-		reader, err = store.Open(ctx, fileMeta.Path)
-	}
-	return
-}

@@ -455,7 +455,7 @@ func (p *PreImportInfoGetterImpl) ReadFirstNRowsByTableName(ctx context.Context,
 // ReadFirstNRowsByFileMeta reads the first N rows of an data file.
 // It implements the PreImportInfoGetter interface.
 func (p *PreImportInfoGetterImpl) ReadFirstNRowsByFileMeta(ctx context.Context, dataFileMeta mydump.SourceFileMeta, n int) ([]string, [][]types.Datum, error) {
-	reader, err := openReader(ctx, dataFileMeta, p.srcStorage)
+	reader, err := mydump.OpenReader(ctx, dataFileMeta, p.srcStorage)
 	if err != nil {
 		return nil, nil, errors.Trace(err)
 	}
@@ -604,7 +604,7 @@ func (p *PreImportInfoGetterImpl) sampleDataFromTable(
 		return resultIndexRatio, isRowOrdered, nil
 	}
 	sampleFile := tableMeta.DataFiles[0].FileMeta
-	reader, err := openReader(ctx, sampleFile, p.srcStorage)
+	reader, err := mydump.OpenReader(ctx, sampleFile, p.srcStorage)
 	if err != nil {
 		return 0.0, false, errors.Trace(err)
 	}
@@ -678,7 +678,7 @@ outloop:
 			if !initializedColumns {
 				ignoreColsMap := igCols.ColumnsMap()
 				if len(columnPermutation) == 0 {
-					columnPermutation, err = createColumnPermutation(
+					columnPermutation, err = common.CreateColumnPermutation(
 						columnNames,
 						ignoreColsMap,
 						tableInfo,

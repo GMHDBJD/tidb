@@ -16,6 +16,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -29,6 +30,9 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
 	"github.com/pingcap/tidb/br/pkg/storage"
+	"github.com/pingcap/tidb/disttask/framework/handle"
+	"github.com/pingcap/tidb/disttask/framework/proto"
+	"github.com/pingcap/tidb/disttask/loaddata"
 	"github.com/pingcap/tidb/executor/asyncloaddata"
 	"github.com/pingcap/tidb/executor/importer"
 	"github.com/pingcap/tidb/expression"
@@ -44,7 +48,8 @@ import (
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tidb/util/dbterror/exeerrors"
-	"github.com/pingcap/tidb/util/intest"
+
+	//"github.com/pingcap/tidb/util/intest"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/sqlexec"
 	"github.com/pingcap/tidb/util/stringutil"
@@ -138,9 +143,10 @@ func (e *LoadDataExec) loadFromRemote(
 	path string,
 ) (int64, error) {
 	opt := &storage.ExternalStorageOptions{}
-	if intest.InTest {
-		opt.NoCredentials = true
-	}
+	//if intest.InTest {
+	//	opt.NoCredentials = true
+	//}
+	opt.NoCredentials = true
 	s, err := storage.New(ctx, b, opt)
 	if err != nil {
 		return 0, exeerrors.ErrLoadDataCantAccess.GenWithStackByArgs(getMsgFromBRError(err))
@@ -262,6 +268,7 @@ type LoadDataWorker struct {
 
 	controller *importer.LoadDataController
 
+	dbName          string
 	table           table.Table
 	row             []types.Datum
 	rows            [][]types.Datum
@@ -341,6 +348,7 @@ func NewLoadDataWorker(
 		row:             make([]types.Datum, 0, len(insertVal.insertColumns)),
 		commitTaskQueue: make(chan commitTask, taskQueueSize),
 		InsertValues:    insertVal,
+		dbName:          plan.Schema().String(),
 		table:           tbl,
 		controller:      controller,
 		Ctx:             sctx,
@@ -430,6 +438,11 @@ func (e *LoadDataWorker) doLoad(
 	readerInfos []LoadDataReaderInfo,
 	jobID int64,
 ) (err error) {
+	if _, ok := e.ctx.GetSessionVars().GetUserVarVal("dist_ddl"); ok {
+		logutil.BgLogger().Info("load data with dist ddl")
+		return e.doLoadDist(ctx, readerInfos, jobID)
+	}
+
 	defer func() {
 		if e.controller.Detached {
 			e.putSysSessionFn(ctx, e.Ctx)
@@ -1089,4 +1102,98 @@ func (e *LoadDataActionExec) Next(ctx context.Context, _ *chunk.Chunk) error {
 	default:
 		return errors.Errorf("not implemented LOAD DATA action %v", e.tp)
 	}
+}
+
+func (e *LoadDataWorker) doLoadDist(
+	ctx context.Context,
+	readerInfos []LoadDataReaderInfo,
+	jobID int64,
+) (err error) {
+	task, err := e.buildDistTask(readerInfos)
+	if err != nil {
+		return err
+	}
+
+	handle, err := handle.NewHandle(ctx, e.ctx)
+	if err != nil {
+		return err
+	}
+
+	bs, err := json.Marshal(task)
+	if err != nil {
+		return errors.Errorf("failed to marshal distribute loaddata task: %v", err)
+	}
+
+	taskid, done, err := handle.SubmitGlobalTaskAndRun(proto.LoadData, 1, bs)
+	if err != nil {
+		return err
+	}
+
+	logutil.BgLogger().Info("submit global task and run", zap.Int64("task id", taskid), zap.Any("task", task))
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-done:
+			// e.SetMessage()
+			return nil
+		}
+	}
+}
+
+func (e *LoadDataWorker) buildDistTask(readerInfos []LoadDataReaderInfo) (*loaddata.Task, error) {
+	columns := make([]string, 0, len(e.insertColumns))
+	for _, col := range e.insertColumns {
+		columns = append(columns, col.Name.String())
+	}
+	task := &loaddata.Task{
+		Table: loaddata.Table{
+			DBName:        e.dbName,
+			Info:          e.table.Meta(),
+			TargetColumns: columns,
+		},
+		Format: loaddata.Format{
+			Type:                   e.controller.Format,
+			Compression:            mydump.CompressionNone,
+			DataCharacterSet:       "",
+			DataInvalidCharReplace: "",
+		},
+	}
+
+	// generate file infos
+	url, err := storage.ParseRawURL(e.GetInfilePath())
+	if err != nil {
+		return nil, err
+	}
+	url.Path = ""
+
+	task.Dir = url.String()
+	for _, readerInfo := range readerInfos {
+		task.FileInfos = append(task.FileInfos, loaddata.FileInfo{
+			Path:     readerInfo.Remote.path,
+			Size:     readerInfo.Remote.size,
+			RealSize: readerInfo.Remote.size,
+		})
+	}
+
+	// generate format config
+	switch e.controller.Format {
+	case importer.LoadDataFormatDelimitedData:
+		task.Format.CSV = loaddata.CSV{
+			Config:                e.controller.GenerateCSVConfig(),
+			LoadDataReadBlockSize: importer.LoadDataReadBlockSize,
+			Strict:                false,
+		}
+	case importer.LoadDataFormatSQLDump:
+		task.Format.SQLDump = loaddata.SQLDump{
+			SQLMode:               e.ctx.GetSessionVars().SQLMode,
+			LoadDataReadBlockSize: importer.LoadDataReadBlockSize,
+		}
+	case importer.LoadDataFormatParquet:
+		task.Format.Parquet = loaddata.Parquet{}
+	default:
+		return nil, exeerrors.ErrLoadDataWrongFormatConfig.GenWithStack("unknown format type %v", e.controller.Format)
+	}
+
+	return task, nil
 }

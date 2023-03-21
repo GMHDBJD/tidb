@@ -16,7 +16,6 @@ package importer
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"time"
 
@@ -35,7 +34,6 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/worker"
 	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tidb/keyspace"
-	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/types"
 	"go.uber.org/zap"
 )
@@ -58,49 +56,9 @@ func newChunkProcessor(
 	store storage.ExternalStorage,
 	tableInfo *checkpoints.TidbTableInfo,
 ) (*chunkProcessor, error) {
-	blockBufSize := int64(cfg.Mydumper.ReadBlockSize)
-
-	reader, err := openReader(ctx, chunk.FileMeta, store)
+	parser, err := mydump.BuildParser(ctx, cfg, chunk.FileMeta, chunk.Chunk, chunk.ColumnPermutation, ioWorkers, store, tableInfo.Core)
 	if err != nil {
-		return nil, errors.Trace(err)
-	}
-
-	var parser mydump.Parser
-	switch chunk.FileMeta.Type {
-	case mydump.SourceTypeCSV:
-		hasHeader := cfg.Mydumper.CSV.Header && chunk.Chunk.Offset == 0
-		// Create a utf8mb4 convertor to encode and decode data with the charset of CSV files.
-		charsetConvertor, err := mydump.NewCharsetConvertor(cfg.Mydumper.DataCharacterSet, cfg.Mydumper.DataInvalidCharReplace)
-		if err != nil {
-			return nil, err
-		}
-		parser, err = mydump.NewCSVParser(ctx, &cfg.Mydumper.CSV, reader, blockBufSize, ioWorkers, hasHeader, charsetConvertor)
-		if err != nil {
-			return nil, errors.Trace(err)
-		}
-	case mydump.SourceTypeSQL:
-		parser = mydump.NewChunkParser(ctx, cfg.TiDB.SQLMode, reader, blockBufSize, ioWorkers)
-	case mydump.SourceTypeParquet:
-		parser, err = mydump.NewParquetParser(ctx, store, reader, chunk.FileMeta.Path)
-		if err != nil {
-			return nil, errors.Trace(err)
-		}
-	default:
-		panic(fmt.Sprintf("file '%s' with unknown source type '%s'", chunk.Key.Path, chunk.FileMeta.Type.String()))
-	}
-
-	if chunk.FileMeta.Compression == mydump.CompressionNone {
-		if err = parser.SetPos(chunk.Chunk.Offset, chunk.Chunk.PrevRowIDMax); err != nil {
-			return nil, errors.Trace(err)
-		}
-	} else {
-		if err = mydump.ReadUntil(parser, chunk.Chunk.Offset); err != nil {
-			return nil, errors.Trace(err)
-		}
-		parser.SetRowID(chunk.Chunk.PrevRowIDMax)
-	}
-	if len(chunk.ColumnPermutation) > 0 {
-		parser.SetColumns(getColumnNames(tableInfo.Core, chunk.ColumnPermutation))
+		return nil, err
 	}
 
 	return &chunkProcessor{
@@ -108,34 +66,6 @@ func newChunkProcessor(
 		index:  index,
 		chunk:  chunk,
 	}, nil
-}
-
-func getColumnNames(tableInfo *model.TableInfo, permutation []int) []string {
-	colIndexes := make([]int, 0, len(permutation))
-	for i := 0; i < len(permutation); i++ {
-		colIndexes = append(colIndexes, -1)
-	}
-	colCnt := 0
-	for i, p := range permutation {
-		if p >= 0 {
-			colIndexes[p] = i
-			colCnt++
-		}
-	}
-
-	names := make([]string, 0, colCnt)
-	for _, idx := range colIndexes {
-		// skip columns with index -1
-		if idx >= 0 {
-			// original fields contains _tidb_rowid field
-			if idx == len(tableInfo.Columns) {
-				names = append(names, model.ExtraHandleName.O)
-			} else {
-				names = append(names, tableInfo.Columns[idx].Name.O)
-			}
-		}
-	}
-	return names
 }
 
 func (cr *chunkProcessor) process(

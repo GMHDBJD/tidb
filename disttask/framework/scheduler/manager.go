@@ -16,6 +16,8 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -95,7 +97,7 @@ func (b *ManagerBuilder) BuildManager(ctx context.Context, id string, globalTask
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	m.mu.handlingTasks = make(map[int64]context.CancelFunc)
 
-	schedulerPool, err := m.newPool("scheduler_pool", schedulerPoolSize, util.DDL)
+	schedulerPool, err := m.newPool(fmt.Sprintf("scheduler_pool_%d", rand.Int()), schedulerPoolSize, util.DDL)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +108,7 @@ func (b *ManagerBuilder) BuildManager(ctx context.Context, id string, globalTask
 		if opt, ok := subtaskExecutorOptions[taskType]; ok && opt.PoolSize > 0 {
 			poolSize = opt.PoolSize
 		}
-		subtaskExecutorPool, err := m.newPool(taskType+"_pool", poolSize, util.DDL)
+		subtaskExecutorPool, err := m.newPool(fmt.Sprintf("%s_pool_%d", taskType, rand.Int()), poolSize, util.DDL)
 		if err != nil {
 			return nil, err
 		}

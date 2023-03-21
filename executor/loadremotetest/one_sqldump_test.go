@@ -16,6 +16,8 @@ package loadremotetest
 
 import (
 	"fmt"
+	"testing"
+	"time"
 
 	"github.com/fsouza/fake-gcs-server/fakestorage"
 	"github.com/pingcap/tidb/testkit"
@@ -52,4 +54,31 @@ func (s *mockGCSSuite) TestLoadSQLDump() {
 	require.ErrorContains(s.T(), err, "The current job status cannot perform the operation. need status running or paused, but got finished")
 	s.tk.MustExec("DROP LOAD DATA JOB " + jobID)
 	s.tk.MustQuery("SELECT job_id FROM mysql.load_data_jobs WHERE job_id = " + jobID).Check(testkit.Rows())
+}
+
+func TestXxx(t *testing.T) {
+	op := fakestorage.Options{
+		Scheme:     "http",
+		Host:       gcsHost,
+		Port:       4443,
+		PublicHost: gcsHost,
+	}
+	server, err := fakestorage.NewServerWithOptions(op)
+	require.NoError(t, err)
+	server.CreateObject(fakestorage.Object{
+		ObjectAttrs: fakestorage.ObjectAttrs{
+			BucketName: "csv",
+			Name:       "test1.csv",
+		},
+		Content: []byte(`1`),
+	})
+	server.CreateObject(fakestorage.Object{
+		ObjectAttrs: fakestorage.ObjectAttrs{
+			BucketName: "csv",
+			Name:       "test2.csv",
+		},
+		Content: []byte(`2`),
+	})
+
+	time.Sleep(1 * time.Hour)
 }

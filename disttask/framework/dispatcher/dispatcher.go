@@ -16,7 +16,6 @@ package dispatcher
 
 import (
 	"context"
-	"math/rand"
 	"time"
 
 	"github.com/pingcap/errors"
@@ -356,26 +355,32 @@ func (d *dispatcher) processNormalFlow(gTask *proto.Task) (err error) {
 
 // GetEligibleInstance gets an eligible instance.
 func GetEligibleInstance(ctx context.Context) (string, error) {
-	if len(MockTiDBIDs) != 0 {
-		return MockTiDBIDs[rand.Intn(len(MockTiDBIDs))], nil
-	}
-	serverInfos, err := infosync.GetAllServerInfo(ctx)
-	if err != nil {
-		return "", err
-	}
-	if len(serverInfos) == 0 {
-		return "", errors.New("not found instance")
-	}
-
-	// TODO: Consider valid instances, and then consider scheduling strategies.
-	num := rand.Intn(len(serverInfos))
-	for _, info := range serverInfos {
-		if num == 0 {
-			return info.ID, nil
-		}
-		num--
-	}
-	return "", errors.New("not found instance")
+	//	if len(MockTiDBIDs) != 0 {
+	//		return MockTiDBIDs[rand.Intn(len(MockTiDBIDs))], nil
+	//	}
+	//
+	// serverInfos, err := infosync.GetAllServerInfo(ctx)
+	//
+	//	if err != nil {
+	//		return "", err
+	//	}
+	//
+	//	if len(serverInfos) == 0 {
+	//		return "", errors.New("not found instance")
+	//	}
+	//
+	// // TODO: Consider valid instances, and then consider scheduling strategies.
+	// num := rand.Intn(len(serverInfos))
+	//
+	//	for _, info := range serverInfos {
+	//		if num == 0 {
+	//			return info.ID, nil
+	//		}
+	//		num--
+	//	}
+	//
+	// return "", errors.New("not found instance")
+	return "test", nil
 }
 
 func (d *dispatcher) GetTaskAllInstances(ctx context.Context, gTaskID int64) ([]string, error) {

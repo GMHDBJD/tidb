@@ -212,6 +212,21 @@ func (stm *GlobalTaskManager) GetTaskByID(taskID int64) (task *proto.Task, err e
 	return row2GlobeTask(rs[0]), nil
 }
 
+// HasTaskInStates checks if there are task in the states.
+func (stm *GlobalTaskManager) HasTaskInStates(taskID int64, states ...interface{}) (bool, error) {
+	stm.mu.Lock()
+	defer stm.mu.Unlock()
+
+	args := []interface{}{taskID}
+	args = append(args, states...)
+	rs, err := execSQL(stm.ctx, stm.se, "select 1 from mysql.tidb_global_task where id = %? and state in ("+strings.Repeat("%?,", len(states)-1)+"%?) limit 1", args...)
+	if err != nil {
+		return false, err
+	}
+
+	return len(rs) > 0, nil
+}
+
 // SubTaskManager is the manager of subtask.
 type SubTaskManager struct {
 	ctx context.Context
