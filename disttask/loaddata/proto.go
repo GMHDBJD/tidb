@@ -15,9 +15,9 @@
 package loaddata
 
 import (
-	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
+	"github.com/pingcap/tidb/ddl/ingest"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
 )
@@ -47,11 +47,12 @@ type Subtask struct {
 // MinimalTask is the minimal task of LoadData.
 // Scheduler will split the subtask into minimal tasks(Chunks -> Chunk)
 type MinimalTask struct {
+	ID     int
 	Table  Table
 	Format Format
 	Dir    string
 	Chunk  Chunk
-	Writer *backend.LocalEngineWriter
+	Writer *ingest.WriterContext
 }
 
 // IsMinimalTask implements the MinimalTask interface.

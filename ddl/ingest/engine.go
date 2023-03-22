@@ -225,3 +225,7 @@ func (wCtx *WriterContext) WriteRow(key, idxVal []byte, handle tidbkv.Handle) er
 	row := kv.MakeRowsFromKvPairs(kvs)
 	return wCtx.lWrite.WriteRows(wCtx.ctx, nil, row)
 }
+
+func (wCtx *WriterContext) WriteRows(ctx context.Context, columnNames []string, rows kv.Rows) error {
+	return wCtx.lWrite.WriteRows(ctx, columnNames, rows)
+}
