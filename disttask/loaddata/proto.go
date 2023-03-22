@@ -27,6 +27,7 @@ const (
 	ReadSortImport = 1
 )
 
+// Task is the task of LoadData.
 type Task struct {
 	Table     Table
 	Format    Format
@@ -34,6 +35,8 @@ type Task struct {
 	FileInfos []FileInfo
 }
 
+// Subtask is the subtask of LoadData.
+// Dispatcher will split the task into subtasks(FileInfos -> Chunks)
 type Subtask struct {
 	Table  Table
 	Format Format
@@ -41,6 +44,8 @@ type Subtask struct {
 	Chunks []Chunk
 }
 
+// MinimalTask is the minimal task of LoadData.
+// Scheduler will split the subtask into minimal tasks(Chunks -> Chunk)
 type MinimalTask struct {
 	Table  Table
 	Format Format
@@ -49,21 +54,17 @@ type MinimalTask struct {
 	Writer *backend.LocalEngineWriter
 }
 
+// IsMinimalTask implements the MinimalTask interface.
 func (MinimalTask) IsMinimalTask() {}
 
-type CSV struct {
-	Config                *config.CSVConfig
-	LoadDataReadBlockSize int64
-	Strict                bool
+// Table records the table information.
+type Table struct {
+	DBName        string
+	Info          *model.TableInfo
+	TargetColumns []string
 }
 
-type SQLDump struct {
-	SQLMode               mysql.SQLMode
-	LoadDataReadBlockSize int64
-}
-
-type Parquet struct{}
-
+// Format records the format information.
 type Format struct {
 	Type                   string
 	Compression            mydump.Compression
@@ -74,12 +75,23 @@ type Format struct {
 	DataInvalidCharReplace string
 }
 
-type Table struct {
-	DBName        string
-	Info          *model.TableInfo
-	TargetColumns []string
+// CSV records the CSV format information.
+type CSV struct {
+	Config                *config.CSVConfig
+	LoadDataReadBlockSize int64
+	Strict                bool
 }
 
+// SQLDump records the SQL dump format information.
+type SQLDump struct {
+	SQLMode               mysql.SQLMode
+	LoadDataReadBlockSize int64
+}
+
+// Parquet records the Parquet format information.
+type Parquet struct{}
+
+// Chunk records the chunk information.
 type Chunk struct {
 	Path         string
 	Offset       int64
@@ -89,6 +101,7 @@ type Chunk struct {
 	RowIDMax     int64
 }
 
+// FileInfo records the file information.
 type FileInfo struct {
 	Path     string
 	Size     int64
