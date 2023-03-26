@@ -196,7 +196,8 @@ func (s *ReadSortImportScheduler) InitSubtaskExecEnv(ctx context.Context) error 
 	lightningConfig := generateLocalEngineConfig(s.task.Table.Info.ID, "db", s.task.Table.Info.Name.String())
 	logutil.BgLogger().Info("[ddl-ingest] create local backend for adding index", zap.String("keyspaceName", cfg.KeyspaceName))
 	errorMgr := errormanager.New(nil, cfg.Lightning, log.Logger{Logger: logutil.BgLogger()})
-	be, err := local.NewLocalBackend(ctx, tls, cfg.Lightning, &glueLit{}, int(util.GenRLimit()), errorMgr, cfg.KeyspaceName)
+	encodingBuilder := local.NewEncodingBuilder(ctx)
+	be, err := local.NewLocalBackend(ctx, tls, cfg.Lightning, &glueLit{}, int(util.GenRLimit()), errorMgr, cfg.KeyspaceName, encodingBuilder)
 	if err != nil {
 		return err
 	}

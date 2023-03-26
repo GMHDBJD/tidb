@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/tidb/br/pkg/lightning/backend/encode"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
@@ -90,13 +91,21 @@ func buildParser(ctx context.Context, task MinimalTask) (mydump.Parser, error) {
 	return parser, nil
 }
 
-func buildEncoder(ctx context.Context, task MinimalTask) (kv.Encoder, error) {
+func buildEncoder(ctx context.Context, task MinimalTask) (encode.Encoder, error) {
 	idAlloc := kv.NewPanickingAllocators(task.Chunk.PrevRowIDMax)
 	tbl, err := tables.TableFromMeta(idAlloc, task.Table.Info)
 	if err != nil {
 		return nil, err
 	}
-	return kv.NewTableKVEncoder(tbl, &kv.SessionOptions{}, nil, log.Logger{Logger: logutil.BgLogger()})
+	cfg := &encode.EncodingConfig{
+		SessionOptions: encode.SessionOptions{
+			SQLMode:        task.Format.SQLDump.SQLMode,
+			AutoRandomSeed: task.Chunk.PrevRowIDMax,
+		},
+		Table:  tbl,
+		Logger: log.Logger{Logger: logutil.BgLogger()},
+	}
+	return kv.NewTableKVEncoder(cfg, nil)
 }
 
 func makeTableRegions(ctx context.Context, task *Task) ([]*mydump.TableRegion, error) {

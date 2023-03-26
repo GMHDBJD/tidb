@@ -20,7 +20,6 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
-	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	verify "github.com/pingcap/tidb/br/pkg/lightning/verification"
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/disttask/framework/scheduler"
@@ -37,7 +36,6 @@ type ReadWriteSubtaskExectutor struct {
 // Run implements the SubtaskExecutor interface.
 func (e *ReadWriteSubtaskExectutor) Run(ctx context.Context) error {
 	var (
-		logger        = log.Logger{Logger: logutil.BgLogger()}
 		dataKVs       = kv.MakeRowsFromKvPairs(nil)
 		indexKVs      = kv.MakeRowsFromKvPairs(nil)
 		offset        = int64(0)
@@ -70,7 +68,7 @@ func (e *ReadWriteSubtaskExectutor) Run(ctx context.Context) error {
 		}
 
 		lastRow := parser.LastRow()
-		kvs, err := encoder.Encode(logger, lastRow.Row, lastRow.RowID, permutation, e.task.Chunk.Path, offset)
+		kvs, err := encoder.Encode(lastRow.Row, lastRow.RowID, permutation, offset)
 		if err != nil {
 			return err
 		}
