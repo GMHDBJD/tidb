@@ -24,62 +24,72 @@ import (
 	"go.uber.org/zap"
 )
 
-type Dispatcher struct {
-}
+// FlowHandle is the dispatcher for load data.
+type FlowHandle struct{}
 
-func (d *Dispatcher) ProcessNormalFlow(dispatch dispatcher.Dispatch, gTask *proto.Task) ([][]byte, error) {
-	task := &Task{}
-	err := json.Unmarshal(gTask.Meta, task)
+// ProcessNormalFlow implements dispatcher.TaskFlowHandle interface.
+func (*FlowHandle) ProcessNormalFlow(ctx context.Context, dispatch dispatcher.Handle, gTask *proto.Task) ([][]byte, error) {
+	taskMeta := &TaskMeta{}
+	err := json.Unmarshal(gTask.Meta, taskMeta)
 	if err != nil {
 		return nil, err
 	}
-	logutil.BgLogger().Info("process normal flow", zap.Any("task", task), zap.Any("step", gTask.Step))
+	logutil.BgLogger().Info("process normal flow", zap.Any("task_meta", taskMeta), zap.Any("step", gTask.Step))
 
 	switch gTask.Step {
-	case ReadSortImport:
+	case Import:
 		gTask.State = proto.TaskStateSucceed
 		return nil, nil
 	default:
 	}
 
-	subtasks, err := generateSubtasks(context.Background(), task)
+	instances, err := dispatch.GetTaskAllInstances(ctx, gTask.ID)
 	if err != nil {
 		return nil, err
 	}
-	logutil.BgLogger().Info("generate subtasks", zap.Any("subtasks", subtasks))
-	subtaskMetas := make([][]byte, 0, len(task.FileInfos))
-	for _, subtask := range subtasks {
-		bs, err := json.Marshal(subtask)
+	subtaskMetas, err := generateSubtaskMetas(ctx, taskMeta, len(instances))
+	if err != nil {
+		return nil, err
+	}
+	logutil.BgLogger().Info("generate subtasks", zap.Any("subtask_metas", subtaskMetas))
+	metaBytes := make([][]byte, 0, len(taskMeta.FileInfos))
+	for _, subtaskMeta := range subtaskMetas {
+		bs, err := json.Marshal(subtaskMeta)
 		if err != nil {
 			return nil, err
 		}
-		subtaskMetas = append(subtaskMetas, bs)
+		metaBytes = append(metaBytes, bs)
 	}
-	gTask.Step = ReadSortImport
-	return subtaskMetas, nil
+	gTask.Step = Import
+	return metaBytes, nil
 }
 
-func (d *Dispatcher) ProcessErrFlow(dispatch dispatcher.Dispatch, gTask *proto.Task, errMsg string) ([]byte, error) {
+// ProcessErrFlow implements dispatcher.ProcessErrFlow interface.
+func (*FlowHandle) ProcessErrFlow(_ context.Context, _ dispatcher.Handle, _ *proto.Task, errMsg string) ([]byte, error) {
 	logutil.BgLogger().Info("process error flow", zap.String("error message", errMsg))
 	return nil, nil
 }
 
-func generateSubtasks(ctx context.Context, task *Task) ([]*Subtask, error) {
-	tableRegions, err := makeTableRegions(ctx, task)
+func generateSubtaskMetas(ctx context.Context, task *TaskMeta, concurrency int) ([]*SubtaskMeta, error) {
+	tableRegions, err := makeTableRegions(ctx, task, concurrency)
 	if err != nil {
 		return nil, err
 	}
 
-	subtasks := make([]*Subtask, 0, 3)
+	engineMap := make(map[int32]int)
+	subtasks := make([]*SubtaskMeta, 0)
 	for _, region := range tableRegions {
-		if region.EngineID >= int32(len(subtasks)) {
-			subtasks = append(subtasks, &Subtask{
+		idx, ok := engineMap[region.EngineID]
+		if !ok {
+			idx = len(subtasks)
+			engineMap[region.EngineID] = idx
+			subtasks = append(subtasks, &SubtaskMeta{
 				Table:  task.Table,
 				Format: task.Format,
 				Dir:    task.Dir,
 			})
 		}
-		subtask := subtasks[region.EngineID]
+		subtask := subtasks[idx]
 		subtask.Chunks = append(subtask.Chunks, Chunk{
 			Path:         region.FileMeta.Path,
 			Offset:       region.Chunk.Offset,
@@ -93,5 +103,5 @@ func generateSubtasks(ctx context.Context, task *Task) ([]*Subtask, error) {
 }
 
 func init() {
-	dispatcher.RegisterTaskFlowHandle(proto.LoadData, &Dispatcher{})
+	dispatcher.RegisterTaskFlowHandle(proto.LoadData, &FlowHandle{})
 }

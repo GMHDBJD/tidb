@@ -27,6 +27,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tidb/executor/importer"
 	"github.com/pingcap/tidb/table/tables"
+	"github.com/pingcap/tidb/util/intest"
 	"github.com/pingcap/tidb/util/logutil"
 )
 
@@ -41,12 +42,12 @@ func getStore(ctx context.Context, dir string) (storage.ExternalStorage, error) 
 	return storage.New(ctx, b, opt)
 }
 
-func createColumnPermutation(task MinimalTask) ([]int, error) {
+func createColumnPermutation(task MinimalTaskMeta) ([]int, error) {
 	var ignoreColumns map[string]struct{}
 	return common.CreateColumnPermutation(task.Table.TargetColumns, ignoreColumns, task.Table.Info, log.Logger{Logger: logutil.BgLogger()})
 }
 
-func buildParser(ctx context.Context, task MinimalTask) (mydump.Parser, error) {
+func buildParser(ctx context.Context, task MinimalTaskMeta) (mydump.Parser, error) {
 	store, err := getStore(ctx, task.Dir)
 	if err != nil {
 		return nil, err
@@ -91,7 +92,7 @@ func buildParser(ctx context.Context, task MinimalTask) (mydump.Parser, error) {
 	return parser, nil
 }
 
-func buildEncoder(ctx context.Context, task MinimalTask) (encode.Encoder, error) {
+func buildEncoder(ctx context.Context, task MinimalTaskMeta) (encode.Encoder, error) {
 	idAlloc := kv.NewPanickingAllocators(task.Chunk.PrevRowIDMax)
 	tbl, err := tables.TableFromMeta(idAlloc, task.Table.Info)
 	if err != nil {
@@ -108,13 +109,19 @@ func buildEncoder(ctx context.Context, task MinimalTask) (encode.Encoder, error)
 	return kv.NewTableKVEncoder(cfg, nil)
 }
 
-func makeTableRegions(ctx context.Context, task *Task) ([]*mydump.TableRegion, error) {
+func makeTableRegions(ctx context.Context, task *TaskMeta, concurrency int) ([]*mydump.TableRegion, error) {
+	if concurrency <= 0 {
+		return nil, errors.Errorf("concurrency must be greater than 0, but got %d", concurrency)
+	}
+
 	b, err := storage.ParseBackend(task.Dir, nil)
 	if err != nil {
 		return nil, err
 	}
-	opt := &storage.ExternalStorageOptions{
-		NoCredentials: true,
+
+	opt := &storage.ExternalStorageOptions{}
+	if intest.InTest {
+		opt.NoCredentials = true
 	}
 	store, err := storage.New(ctx, b, opt)
 	if err != nil {
@@ -122,8 +129,9 @@ func makeTableRegions(ctx context.Context, task *Task) ([]*mydump.TableRegion, e
 	}
 
 	meta := &mydump.MDTableMeta{
-		DB:   task.Table.DBName,
-		Name: task.Table.Info.Name.String(),
+		DB:           task.Table.DBName,
+		Name:         task.Table.Info.Name.String(),
+		IsRowOrdered: task.Table.IsRowOrdered,
 	}
 
 	sourceType, err := transformSourceType(task.Format.Type)
@@ -143,17 +151,20 @@ func makeTableRegions(ctx context.Context, task *Task) ([]*mydump.TableRegion, e
 	}
 	cfg := &config.Config{
 		App: config.Lightning{
-			RegionConcurrency: 2,
-			TableConcurrency:  3,
+			RegionConcurrency: concurrency,
+			TableConcurrency:  concurrency,
 		},
 		Mydumper: config.MydumperRuntime{
-			StrictFormat:     task.Format.CSV.Strict,
-			MaxRegionSize:    config.MaxRegionSize,
+			CSV:           task.Format.CSV.Config,
+			StrictFormat:  task.Format.CSV.Strict,
+			MaxRegionSize: config.MaxRegionSize,
+			ReadBlockSize: config.ReadBlockSize,
+			// uniform distribution
 			BatchImportRatio: 0,
 		},
 	}
 
-	return mydump.MakeTableRegions(ctx, meta, len(task.Table.Info.Columns), cfg, nil, store)
+	return mydump.MakeTableRegions(ctx, meta, len(task.Table.TargetColumns), cfg, nil, store)
 }
 
 func transformSourceType(tp string) (mydump.SourceType, error) {
@@ -165,6 +176,6 @@ func transformSourceType(tp string) (mydump.SourceType, error) {
 	case importer.LoadDataFormatSQLDump:
 		return mydump.SourceTypeSQL, nil
 	default:
-		return mydump.SourceTypeIgnore, errors.Errorf("unknown source type %s", tp)
+		return mydump.SourceTypeIgnore, errors.Errorf("unknown source type: %s", tp)
 	}
 }
