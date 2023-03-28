@@ -56,12 +56,12 @@ func (m *backendCtxManager) Register(ctx context.Context, unique bool, jobID int
 		if !ok {
 			return nil, genBackendAllocMemFailedErr(m.memRoot, jobID)
 		}
-		cfg, err := genConfig(m.memRoot, jobID, unique)
+		cfg, err := GenConfig(WithMemRoot(m.memRoot), WithSortedKVDir(encodeBackendTag(jobID)), WithUnique(unique))
 		if err != nil {
 			logutil.BgLogger().Warn(LitWarnConfigError, zap.Int64("job ID", jobID), zap.Error(err))
 			return nil, err
 		}
-		bd, err := createLocalBackend(ctx, cfg, glueLit{})
+		bd, err := CreateLocalBackend(ctx, cfg)
 		if err != nil {
 			logutil.BgLogger().Error(LitErrCreateBackendFail, zap.Int64("job ID", jobID), zap.Error(err))
 			return nil, err
@@ -80,17 +80,17 @@ func (m *backendCtxManager) Register(ctx context.Context, unique bool, jobID int
 	return bc, nil
 }
 
-func createLocalBackend(ctx context.Context, cfg *Config, glue glue.Glue) (backend.Backend, error) {
+func CreateLocalBackend(ctx context.Context, cfg *Config) (backend.Backend, error) {
 	tls, err := cfg.Lightning.ToTLS()
 	if err != nil {
 		logutil.BgLogger().Error(LitErrCreateBackendFail, zap.Error(err))
 		return backend.Backend{}, err
 	}
 
-	logutil.BgLogger().Info("[ddl-ingest] create local backend for adding index", zap.String("keyspaceName", cfg.KeyspaceName))
+	logutil.BgLogger().Info("create local backend", zap.String("keyspaceName", cfg.KeyspaceName))
 	errorMgr := errormanager.New(nil, cfg.Lightning, log.Logger{Logger: logutil.BgLogger()})
 	encodingBuilder := local.NewEncodingBuilder(ctx)
-	return local.NewLocalBackend(ctx, tls, cfg.Lightning, glue, int(LitRLimit), errorMgr, cfg.KeyspaceName, encodingBuilder)
+	return local.NewLocalBackend(ctx, tls, cfg.Lightning, glue.GlueLit{}, int(LitRLimit), errorMgr, cfg.KeyspaceName, encodingBuilder)
 }
 
 func newBackendContext(ctx context.Context, jobID int64, be *backend.Backend,

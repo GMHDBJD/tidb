@@ -38,6 +38,7 @@ type TaskMeta struct {
 // SubtaskMeta is the subtask of LoadData.
 // Dispatcher will split the task into subtasks(FileInfos -> Chunks)
 type SubtaskMeta struct {
+	ID     int
 	Table  Table
 	Format Format
 	Dir    string

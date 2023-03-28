@@ -84,6 +84,7 @@ func generateSubtaskMetas(ctx context.Context, task *TaskMeta, concurrency int) 
 			idx = len(subtasks)
 			engineMap[region.EngineID] = idx
 			subtasks = append(subtasks, &SubtaskMeta{
+				ID:     idx,
 				Table:  task.Table,
 				Format: task.Format,
 				Dir:    task.Dir,
