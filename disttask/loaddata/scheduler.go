@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
@@ -33,8 +32,8 @@ import (
 type ImportScheduler struct {
 	taskMeta         *TaskMeta
 	lightningBackend backend.Backend
-	mu               sync.RWMutex
-	engines          map[int]*backend.OpenedEngine
+	openedEngine     *backend.OpenedEngine
+	writers          []*backend.LocalEngineWriter
 }
 
 // InitSubtaskExecEnv is used to initialize the environment for the subtask executor.
@@ -50,6 +49,13 @@ func (s *ImportScheduler) InitSubtaskExecEnv(ctx context.Context) error {
 		return err
 	}
 	s.lightningBackend = backend
+
+	cfg := ingest.GenerateLocalEngineConfig(s.taskMeta.Table.Info.ID, s.taskMeta.Table.DBName, s.taskMeta.Table.Info.Name.String())
+	engine, err := s.lightningBackend.OpenEngine(ctx, cfg, s.taskMeta.Table.Info.Name.String(), int32(s.taskMeta.Table.Info.ID))
+	if err != nil {
+		return err
+	}
+	s.openedEngine = engine
 	return nil
 }
 
@@ -62,26 +68,13 @@ func (s *ImportScheduler) SplitSubtask(ctx context.Context, bs []byte) ([]proto.
 		return nil, err
 	}
 
-	s.mu.Lock()
-	engine, ok := s.engines[subtaskMeta.ID]
-	s.mu.Unlock()
-	if !ok {
-		cfg := ingest.GenerateLocalEngineConfig(subtaskMeta.Table.Info.ID, subtaskMeta.Table.DBName, subtaskMeta.Table.Info.Name.String())
-		engine, err = s.lightningBackend.OpenEngine(ctx, cfg, subtaskMeta.Table.Info.Name.String(), int32(subtaskMeta.ID))
+	miniTask := make([]proto.MinimalTask, 0, len(subtaskMeta.Chunks))
+	for _, chunk := range subtaskMeta.Chunks {
+		writer, err := s.openedEngine.LocalWriter(ctx, &backend.LocalWriterConfig{IsKVSorted: subtaskMeta.Table.IsRowOrdered})
 		if err != nil {
 			return nil, err
 		}
-		s.mu.Lock()
-		s.engines[subtaskMeta.ID] = engine
-		s.mu.Unlock()
-	}
-
-	miniTask := make([]proto.MinimalTask, 0, len(subtaskMeta.Chunks))
-	for _, chunk := range subtaskMeta.Chunks {
-		writer, err := engine.LocalWriter(ctx, &backend.LocalWriterConfig{IsKVSorted: subtaskMeta.Table.IsRowOrdered})
-		if err != nil {
-			panic(err.Error())
-		}
+		s.writers = append(s.writers, writer)
 		miniTask = append(miniTask, MinimalTaskMeta{
 			Table:  subtaskMeta.Table,
 			Format: subtaskMeta.Format,
@@ -96,20 +89,20 @@ func (s *ImportScheduler) SplitSubtask(ctx context.Context, bs []byte) ([]proto.
 // CleanupSubtaskExecEnv is used to clean up the environment for the subtask executor.
 func (s *ImportScheduler) CleanupSubtaskExecEnv(ctx context.Context) error {
 	logutil.BgLogger().Info("CleanupSubtaskExecEnv", zap.Any("taskMeta", s.taskMeta))
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, engine := range s.engines {
-		closedEngine, err := engine.Close(ctx)
-		if err != nil {
+	closedEngine, err := s.openedEngine.Close(ctx)
+	if err != nil {
+		return err
+	}
+	for _, writer := range s.writers {
+		if _, err := writer.Close(ctx); err != nil {
 			return err
 		}
-		if err := closedEngine.Import(ctx, int64(config.SplitRegionSize), int64(config.SplitRegionKeys)); err != nil {
-			return err
-		}
-		if err := closedEngine.Cleanup(ctx); err != nil {
-			return err
-		}
+	}
+	if err := closedEngine.Import(ctx, int64(config.SplitRegionSize), int64(config.SplitRegionKeys)); err != nil {
+		return err
+	}
+	if err := closedEngine.Cleanup(ctx); err != nil {
+		return err
 	}
 	s.lightningBackend.Close()
 	return nil
