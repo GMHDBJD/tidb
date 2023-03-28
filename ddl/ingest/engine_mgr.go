@@ -55,7 +55,7 @@ func (m *engineManager) Register(bc *BackendContext, jobID, indexID int64, schem
 			return nil, genEngineAllocMemFailedErr(m.MemRoot, bc.jobID, indexID)
 		}
 
-		cfg := generateLocalEngineConfig(jobID, schemaName, tableName)
+		cfg := GenerateLocalEngineConfig(jobID, schemaName, tableName)
 		openedEn, err := bc.backend.OpenEngine(bc.ctx, cfg, tableName, int32(indexID))
 		if err != nil {
 			logutil.BgLogger().Warn(LitErrCreateEngineFail, zap.Int64("job ID", jobID),

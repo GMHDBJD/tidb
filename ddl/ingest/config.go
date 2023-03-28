@@ -36,12 +36,48 @@ type Config struct {
 	KeyspaceName string
 }
 
-func genConfig(memRoot MemRoot, jobID int64, unique bool) (*Config, error) {
+type ConfigOptions struct {
+	memRoot MemRoot
+	dir     string
+	unique  bool
+}
+
+// Option is a function that changes some config of ConfigOptions
+type Option func(*ConfigOptions)
+
+// WithMemRoot changes the configOptions.memRoot.
+func WithMemRoot(memRoot MemRoot) Option {
+	return func(c *ConfigOptions) {
+		c.memRoot = memRoot
+	}
+}
+
+// WithJobID changes the configOptions.jobID.
+func WithSortedKVDir(dir string) Option {
+	return func(c *ConfigOptions) {
+		c.dir = dir
+	}
+}
+
+// WithUnique changes the configOptions.unique.
+func WithUnique(unique bool) Option {
+	return func(c *ConfigOptions) {
+		c.unique = unique
+	}
+}
+
+// GenConfig generates a new config for the lightning.
+func GenConfig(opts ...Option) (*Config, error) {
+	configOptions := &ConfigOptions{}
+	for _, opt := range opts {
+		opt(configOptions)
+	}
+
 	tidbCfg := tidb.GetGlobalConfig()
 	cfg := lightning.NewConfig()
 	cfg.TikvImporter.Backend = lightning.BackendLocal
 	// Each backend will build a single dir in lightning dir.
-	cfg.TikvImporter.SortedKVDir = filepath.Join(LitSortPath, encodeBackendTag(jobID))
+	cfg.TikvImporter.SortedKVDir = filepath.Join(LitSortPath, configOptions.dir)
 	if ImporterRangeConcurrencyForTest != nil {
 		cfg.TikvImporter.RangeConcurrency = int(ImporterRangeConcurrencyForTest.Load())
 	}
@@ -50,9 +86,9 @@ func genConfig(memRoot MemRoot, jobID int64, unique bool) (*Config, error) {
 		logutil.BgLogger().Warn(LitWarnConfigError, zap.Error(err))
 		return nil, err
 	}
-	adjustImportMemory(memRoot, cfg)
+	adjustImportMemory(configOptions.memRoot, cfg)
 	cfg.Checkpoint.Enable = true
-	if unique {
+	if configOptions.unique {
 		cfg.TikvImporter.DuplicateResolution = lightning.DupeResAlgErr
 	} else {
 		cfg.TikvImporter.DuplicateResolution = lightning.DupeResAlgNone
@@ -78,7 +114,7 @@ var (
 	compactConcurrency = 4
 )
 
-func generateLocalEngineConfig(id int64, dbName, tbName string) *backend.EngineConfig {
+func GenerateLocalEngineConfig(id int64, dbName, tbName string) *backend.EngineConfig {
 	return &backend.EngineConfig{
 		Local: backend.LocalEngineConfig{
 			Compact:            true,
