@@ -66,13 +66,21 @@ func WithUnique(unique bool) Option {
 	}
 }
 
-// GenConfig generates a new config for the lightning.
-func GenConfig(opts ...Option) (*Config, error) {
-	configOptions := &ConfigOptions{}
+func newConfigOptions(opts ...Option) *ConfigOptions {
+	configOptions := &ConfigOptions{
+		memRoot: LitMemRoot,
+		dir:     LitSortPath,
+		unique:  false,
+	}
 	for _, opt := range opts {
 		opt(configOptions)
 	}
+	return configOptions
+}
 
+// GenConfig generates a new config for the lightning.
+func GenConfig(opts ...Option) (*Config, error) {
+	configOptions := newConfigOptions(opts...)
 	tidbCfg := tidb.GetGlobalConfig()
 	cfg := lightning.NewConfig()
 	cfg.TikvImporter.Backend = lightning.BackendLocal
