@@ -775,29 +775,6 @@ func (d *ddl) Start(ctxPool *pools.ResourcePool) error {
 		}
 	})
 
-	se, _ := d.sessPool.get()
-	se2, _ := d.sessPool.get()
-	defer func() {
-		d.sessPool.put(se)
-		d.sessPool.put(se2)
-	}()
-
-	gm := storage.NewGlobalTaskManager(d.ctx, se)
-	sm := storage.NewSubTaskManager(d.ctx, se2)
-	storage.SetGlobalTaskManager(gm)
-	storage.SetSubTaskManager(sm)
-	dispatcher, err := dispatcher.NewDispatcher(context.Background(), gm, sm)
-	if err != nil {
-		return err
-	}
-	dispatcher.Start()
-
-	manager, err := scheduler.NewManagerBuilder().BuildManager(context.Background(), "test", gm, sm)
-	if err != nil {
-		return err
-	}
-	manager.Start()
-
 	d.delRangeMgr = d.newDeleteRangeManager(ctxPool == nil)
 
 	d.prepareWorkers4ConcurrencyDDL()
