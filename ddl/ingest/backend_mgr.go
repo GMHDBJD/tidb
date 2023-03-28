@@ -16,19 +16,14 @@ package ingest
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"math"
 
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
-	"github.com/pingcap/tidb/br/pkg/lightning/checkpoints"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/errormanager"
-	"github.com/pingcap/tidb/br/pkg/lightning/glue"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
-	"github.com/pingcap/tidb/parser"
-	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/util/generic"
 	"github.com/pingcap/tidb/util/logutil"
@@ -89,8 +84,7 @@ func CreateLocalBackend(ctx context.Context, cfg *Config) (backend.Backend, erro
 
 	logutil.BgLogger().Info("create local backend", zap.String("keyspaceName", cfg.KeyspaceName))
 	errorMgr := errormanager.New(nil, cfg.Lightning, log.Logger{Logger: logutil.BgLogger()})
-	encodingBuilder := local.NewEncodingBuilder(ctx)
-	return local.NewLocalBackend(ctx, tls, cfg.Lightning, glue.GlueLit{}, int(LitRLimit), errorMgr, cfg.KeyspaceName, encodingBuilder)
+	return local.NewLocalBackend(ctx, tls, cfg.Lightning, &local.TableRegionSizeGetterImpl{}, int(LitRLimit), errorMgr, cfg.KeyspaceName)
 }
 
 func newBackendContext(ctx context.Context, jobID int64, be *backend.Backend,
@@ -146,48 +140,6 @@ func (m *backendCtxManager) UpdateMemoryUsage() {
 			m.memRoot.ConsumeWithTag(encodeBackendTag(bc.jobID), curSize)
 		}
 	}
-}
-
-// glueLit is used as a placeholder for the local backend initialization.
-type glueLit struct{}
-
-// OwnsSQLExecutor Implement interface OwnsSQLExecutor.
-func (glueLit) OwnsSQLExecutor() bool {
-	return false
-}
-
-// GetSQLExecutor Implement interface GetSQLExecutor.
-func (glueLit) GetSQLExecutor() glue.SQLExecutor {
-	return nil
-}
-
-// GetDB Implement interface GetDB.
-func (glueLit) GetDB() (*sql.DB, error) {
-	return nil, nil
-}
-
-// GetParser Implement interface GetParser.
-func (glueLit) GetParser() *parser.Parser {
-	return nil
-}
-
-// GetTables Implement interface GetTables.
-func (glueLit) GetTables(context.Context, string) ([]*model.TableInfo, error) {
-	return nil, nil
-}
-
-// GetSession Implement interface GetSession.
-func (glueLit) GetSession(context.Context) (checkpoints.Session, error) {
-	return nil, nil
-}
-
-// OpenCheckpointsDB Implement interface OpenCheckpointsDB.
-func (glueLit) OpenCheckpointsDB(context.Context, *config.Config) (checkpoints.DB, error) {
-	return nil, nil
-}
-
-// Record is used to report some information (key, value) to host TiDB, including progress, stage currently.
-func (glueLit) Record(string, uint64) {
 }
 
 func encodeBackendTag(jobID int64) string {
