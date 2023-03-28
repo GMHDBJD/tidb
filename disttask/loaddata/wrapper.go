@@ -16,8 +16,10 @@ package loaddata
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/encode"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
@@ -25,6 +27,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
 	"github.com/pingcap/tidb/br/pkg/storage"
+	"github.com/pingcap/tidb/ddl/ingest"
 	"github.com/pingcap/tidb/executor/importer"
 	"github.com/pingcap/tidb/table/tables"
 	"github.com/pingcap/tidb/util/intest"
@@ -178,4 +181,31 @@ func transformSourceType(tp string) (mydump.SourceType, error) {
 	default:
 		return mydump.SourceTypeIgnore, errors.Errorf("unknown source type: %s", tp)
 	}
+}
+
+func lightningSortedKVDir(tableID int64) string {
+	return fmt.Sprintf("import_%d", tableID)
+}
+
+func createLocalBackend(ctx context.Context, taskMeta *TaskMeta) (*backend.Backend, error) {
+	sortedKVDir := lightningSortedKVDir(taskMeta.Table.Info.ID)
+	backendCfg, err := ingest.GenConfig(ingest.WithSortedKVDir(sortedKVDir))
+	if err != nil {
+		return nil, err
+	}
+
+	backend, err := ingest.CreateLocalBackend(ctx, backendCfg)
+	if err != nil {
+		return nil, err
+	}
+	return &backend, nil
+}
+
+func openEngine(ctx context.Context, taskMeta *TaskMeta, backend *backend.Backend) (*backend.OpenedEngine, error) {
+	cfg := ingest.GenerateLocalEngineConfig(taskMeta.Table.Info.ID, taskMeta.Table.DBName, taskMeta.Table.Info.Name.String())
+	engine, err := backend.OpenEngine(ctx, cfg, taskMeta.Table.Info.Name.String(), int32(taskMeta.Table.Info.ID))
+	if err != nil {
+		return nil, err
+	}
+	return engine, nil
 }
