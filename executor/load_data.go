@@ -1141,12 +1141,12 @@ func (e *LoadDataWorker) doLoadDist(
 	}
 }
 
-func (e *LoadDataWorker) buildDistTask(readerInfos []LoadDataReaderInfo) (*loaddata.Task, error) {
+func (e *LoadDataWorker) buildDistTask(readerInfos []LoadDataReaderInfo) (*loaddata.TaskMeta, error) {
 	columns := make([]string, 0, len(e.insertColumns))
 	for _, col := range e.insertColumns {
 		columns = append(columns, col.Name.String())
 	}
-	task := &loaddata.Task{
+	task := &loaddata.TaskMeta{
 		Table: loaddata.Table{
 			DBName:        e.dbName,
 			Info:          e.table.Meta(),
@@ -1180,14 +1180,12 @@ func (e *LoadDataWorker) buildDistTask(readerInfos []LoadDataReaderInfo) (*loadd
 	switch e.controller.Format {
 	case importer.LoadDataFormatDelimitedData:
 		task.Format.CSV = loaddata.CSV{
-			Config:                e.controller.GenerateCSVConfig(),
-			LoadDataReadBlockSize: importer.LoadDataReadBlockSize,
+			Config:                *e.controller.GenerateCSVConfig(),
 			Strict:                false,
 		}
 	case importer.LoadDataFormatSQLDump:
 		task.Format.SQLDump = loaddata.SQLDump{
 			SQLMode:               e.ctx.GetSessionVars().SQLMode,
-			LoadDataReadBlockSize: importer.LoadDataReadBlockSize,
 		}
 	case importer.LoadDataFormatParquet:
 		task.Format.Parquet = loaddata.Parquet{}

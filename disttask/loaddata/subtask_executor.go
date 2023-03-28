@@ -30,7 +30,7 @@ import (
 
 // ReadWriteSubtaskExecutor is an example subtask executor.
 type ReadWriteSubtaskExectutor struct {
-	task MinimalTask
+	task MinimalTaskMeta
 }
 
 // Run implements the SubtaskExecutor interface.
@@ -88,7 +88,7 @@ func init() {
 		proto.LoadData,
 		// The order of the subtask executors is the same as the order of the subtasks.
 		func(minimalTask proto.MinimalTask, step int64) (scheduler.SubtaskExecutor, error) {
-			task, ok := minimalTask.(MinimalTask)
+			task, ok := minimalTask.(MinimalTaskMeta)
 			if !ok {
 				return nil, errors.Errorf("invalid task type %T", minimalTask)
 			}

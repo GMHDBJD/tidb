@@ -44,7 +44,7 @@ import (
 
 // ReadSortImportScheduler is a scheduler for load data.
 type ReadSortImportScheduler struct {
-	task   *Task
+	task   *TaskMeta
 	be     *backend.Backend
 	engine *backend.OpenedEngine
 	writer *backend.LocalEngineWriter
@@ -237,7 +237,7 @@ func (s *ReadSortImportScheduler) CleanupSubtaskExecEnv(ctx context.Context) err
 
 // SplitSubtask is used to split the subtask into multiple minimal tasks.
 func (s *ReadSortImportScheduler) SplitSubtask(subtaskMeta []byte) []proto.MinimalTask {
-	var subtask Subtask
+	var subtask SubtaskMeta
 	err := json.Unmarshal(subtaskMeta, &subtask)
 	if err != nil {
 		logutil.BgLogger().Error("unmarshal subtask error", zap.Error(err))
@@ -246,7 +246,7 @@ func (s *ReadSortImportScheduler) SplitSubtask(subtaskMeta []byte) []proto.Minim
 
 	miniTask := make([]proto.MinimalTask, 0, len(subtask.Chunks))
 	for _, chunk := range subtask.Chunks {
-		miniTask = append(miniTask, MinimalTask{
+		miniTask = append(miniTask, MinimalTaskMeta{
 			Table:  subtask.Table,
 			Format: subtask.Format,
 			Dir:    subtask.Dir,
@@ -267,7 +267,7 @@ func init() {
 	scheduler.RegisterSchedulerConstructor(
 		proto.LoadData,
 		func(taskMeta []byte, step int64) (scheduler.Scheduler, error) {
-			var task Task
+			var task TaskMeta
 			if err := json.Unmarshal(taskMeta, &task); err != nil {
 				return nil, err
 			}

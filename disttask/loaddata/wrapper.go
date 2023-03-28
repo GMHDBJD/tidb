@@ -64,7 +64,7 @@ func buildParser(ctx context.Context, task MinimalTaskMeta) (mydump.Parser, erro
 	cfg := &config.Config{
 		Mydumper: config.MydumperRuntime{
 			ReadBlockSize:          config.ReadBlockSize,
-			CSV:                    *task.Format.CSV.Config,
+			CSV:                    task.Format.CSV.Config,
 			DataCharacterSet:       task.Format.DataCharacterSet,
 			DataInvalidCharReplace: task.Format.DataInvalidCharReplace,
 		},
