@@ -17,11 +17,9 @@ package loaddata
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
-	"github.com/pingcap/tidb/ddl/ingest"
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/disttask/framework/scheduler"
 	"github.com/pingcap/tidb/util/logutil"
@@ -31,7 +29,7 @@ import (
 // ImportScheduler is a scheduler for load data.
 type ImportScheduler struct {
 	taskMeta         *TaskMeta
-	lightningBackend backend.Backend
+	lightningBackend *backend.Backend
 	openedEngine     *backend.OpenedEngine
 	writers          []*backend.LocalEngineWriter
 }
@@ -40,18 +38,13 @@ type ImportScheduler struct {
 func (s *ImportScheduler) InitSubtaskExecEnv(ctx context.Context) error {
 	logutil.BgLogger().Info("InitSubtaskExecEnv", zap.Any("taskMeta", s.taskMeta))
 	// create backend
-	backendCfg, err := ingest.GenConfig(ingest.WithSortedKVDir(lightningSortedKVDir(s.taskMeta.Table.Info.ID)))
-	if err != nil {
-		return err
-	}
-	backend, err := ingest.CreateLocalBackend(ctx, backendCfg)
+	backend, err := createLocalBackend(ctx, s.taskMeta)
 	if err != nil {
 		return err
 	}
 	s.lightningBackend = backend
 
-	cfg := ingest.GenerateLocalEngineConfig(s.taskMeta.Table.Info.ID, s.taskMeta.Table.DBName, s.taskMeta.Table.Info.Name.String())
-	engine, err := s.lightningBackend.OpenEngine(ctx, cfg, s.taskMeta.Table.Info.Name.String(), int32(s.taskMeta.Table.Info.ID))
+	engine, err := openEngine(ctx, s.taskMeta, backend)
 	if err != nil {
 		return err
 	}
@@ -126,8 +119,4 @@ func init() {
 			return &ImportScheduler{taskMeta: taskMeta}, nil
 		},
 	)
-}
-
-func lightningSortedKVDir(tableID int64) string {
-	return fmt.Sprintf("import_%d", tableID)
 }
