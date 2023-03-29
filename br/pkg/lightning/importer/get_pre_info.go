@@ -684,7 +684,7 @@ outloop:
 			if !initializedColumns {
 				ignoreColsMap := igCols.ColumnsMap()
 				if len(columnPermutation) == 0 {
-					columnPermutation, err = createColumnPermutation(
+					columnPermutation, err = common.CreateColumnPermutation(
 						columnNames,
 						ignoreColsMap,
 						tableInfo,

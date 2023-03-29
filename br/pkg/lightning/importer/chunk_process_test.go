@@ -813,32 +813,3 @@ func TestCompressChunkRestore(t *testing.T) {
 	err = cr.parser.ReadRow()
 	require.Equal(t, io.EOF, errors.Cause(err))
 }
-
-func TestGetColumnsNames(t *testing.T) {
-	p := parser.New()
-	p.SetSQLMode(mysql.ModeANSIQuotes)
-	se := tmock.NewContext()
-	node, err := p.ParseOneStmt(`
-	CREATE TABLE "table" (
-		a INT,
-		b INT,
-		c INT,
-		KEY (b)
-	)`, "", "")
-	require.NoError(t, err)
-	tableInfo, err := ddl.MockTableInfo(se, node.(*ast.CreateTableStmt), 0xabcdef)
-	require.NoError(t, err)
-	tableInfo.State = model.StatePublic
-
-	require.Equal(t, []string{"a", "b", "c"}, getColumnNames(tableInfo, []int{0, 1, 2, -1}))
-	require.Equal(t, []string{"b", "a", "c"}, getColumnNames(tableInfo, []int{1, 0, 2, -1}))
-	require.Equal(t, []string{"b", "c"}, getColumnNames(tableInfo, []int{-1, 0, 1, -1}))
-	require.Equal(t, []string{"a", "b"}, getColumnNames(tableInfo, []int{0, 1, -1, -1}))
-	require.Equal(t, []string{"c", "a"}, getColumnNames(tableInfo, []int{1, -1, 0, -1}))
-	require.Equal(t, []string{"b"}, getColumnNames(tableInfo, []int{-1, 0, -1, -1}))
-	require.Equal(t, []string{"_tidb_rowid", "a", "b", "c"}, getColumnNames(tableInfo, []int{1, 2, 3, 0}))
-	require.Equal(t, []string{"b", "a", "c", "_tidb_rowid"}, getColumnNames(tableInfo, []int{1, 0, 2, 3}))
-	require.Equal(t, []string{"b", "_tidb_rowid", "c"}, getColumnNames(tableInfo, []int{-1, 0, 2, 1}))
-	require.Equal(t, []string{"c", "_tidb_rowid", "a"}, getColumnNames(tableInfo, []int{2, -1, 0, 1}))
-	require.Equal(t, []string{"_tidb_rowid", "b"}, getColumnNames(tableInfo, []int{-1, 1, -1, 0}))
-}

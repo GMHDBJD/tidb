@@ -66,21 +66,12 @@ func WithUnique(unique bool) Option {
 	}
 }
 
-func newConfigOptions(opts ...Option) *ConfigOptions {
-	configOptions := &ConfigOptions{
-		memRoot: LitMemRoot,
-		dir:     LitSortPath,
-		unique:  false,
-	}
+// GenConfig generates a new config for the lightning.
+func GenConfig(opts ...Option) (*Config, error) {
+	configOptions := &ConfigOptions{}
 	for _, opt := range opts {
 		opt(configOptions)
 	}
-	return configOptions
-}
-
-// GenConfig generates a new config for the lightning.
-func GenConfig(opts ...Option) (*Config, error) {
-	configOptions := newConfigOptions(opts...)
 	tidbCfg := tidb.GetGlobalConfig()
 	cfg := lightning.NewConfig()
 	cfg.TikvImporter.Backend = lightning.BackendLocal
@@ -94,7 +85,9 @@ func GenConfig(opts ...Option) (*Config, error) {
 		logutil.BgLogger().Warn(LitWarnConfigError, zap.Error(err))
 		return nil, err
 	}
-	adjustImportMemory(configOptions.memRoot, cfg)
+	if configOptions.memRoot != nil {
+		adjustImportMemory(configOptions.memRoot, cfg)
+	}
 	cfg.Checkpoint.Enable = true
 	if configOptions.unique {
 		cfg.TikvImporter.DuplicateResolution = lightning.DupeResAlgErr
