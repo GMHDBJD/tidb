@@ -97,7 +97,7 @@ func generateSubtaskMetas(ctx context.Context, task *TaskMeta, concurrency int) 
 			RowIDMax:     region.Chunk.RowIDMax,
 		})
 	}
-	return maps.Values[map[int32]*SubtaskMeta](subtaskMetaMap), nil
+	return maps.Values(subtaskMetaMap), nil
 }
 
 func init() {
