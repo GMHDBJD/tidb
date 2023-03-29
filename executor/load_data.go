@@ -982,7 +982,7 @@ func (e *LoadDataWorker) doLoadDist(
 		return errors.Errorf("failed to marshal distribute loaddata task: %v", err)
 	}
 
-	taskid, done, err := handle.SubmitGlobalTaskAndRun(task.Table.Info.Name.String(), proto.LoadData, 1, bs)
+	taskid, done, err := handle.SubmitGlobalTaskAndRun(fmt.Sprintf("%d", jobID), proto.LoadData, 1, bs)
 	if err != nil {
 		return err
 	}

@@ -16,15 +16,18 @@ package dispatcher
 
 import (
 	"context"
+	"math/rand"
 	"time"
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/disttask/framework/storage"
+	"github.com/pingcap/tidb/domain/infosync"
 	tidbutil "github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/syncutil"
 	"go.uber.org/zap"
+	"golang.org/x/exp/maps"
 )
 
 const (
@@ -360,64 +363,48 @@ func (d *dispatcher) processNormalFlow(gTask *proto.Task) (err error) {
 
 // GetEligibleInstance gets an eligible instance.
 func GetEligibleInstance(ctx context.Context) (string, error) {
-	//	if len(MockTiDBIDs) != 0 {
-	//		return MockTiDBIDs[rand.Intn(len(MockTiDBIDs))], nil
-	//	}
-	//
-	// serverInfos, err := infosync.GetAllServerInfo(ctx)
-	//
-	//	if err != nil {
-	//		return "", err
-	//	}
-	//
-	//	if len(serverInfos) == 0 {
-	//		return "", errors.New("not found instance")
-	//	}
-	//
-	// // TODO: Consider valid instances, and then consider scheduling strategies.
-	// num := rand.Intn(len(serverInfos))
-	//
-	//	for _, info := range serverInfos {
-	//		if num == 0 {
-	//			return info.ID, nil
-	//		}
-	//		num--
-	//	}
-	//
-	// return "", errors.New("not found instance")
-	return "test", nil
+	if len(MockTiDBIDs) != 0 {
+		return MockTiDBIDs[rand.Intn(len(MockTiDBIDs))], nil
+	}
+
+	serverInfos, err := infosync.GetAllServerInfo(ctx)
+
+	if err != nil {
+		return "", err
+	}
+
+	if len(serverInfos) == 0 {
+		return "", errors.New("not found instance")
+	}
+
+	// TODO: Consider valid instances, and then consider scheduling strategies.
+	num := rand.Intn(len(serverInfos))
+
+	for _, info := range serverInfos {
+		if num == 0 {
+			return info.ID, nil
+		}
+		num--
+	}
+
+	return "", errors.New("not found instance")
 }
 
 // GetAllSchedulerIDs gets all the scheduler IDs.
 func (d *dispatcher) GetAllSchedulerIDs(ctx context.Context, gTaskID int64) ([]string, error) {
-	return []string{"test"}, nil
-	//	if len(MockTiDBIDs) != 0 {
-	//		return MockTiDBIDs, nil
-	//	}
-	//
-	// serverInfos, err := infosync.GetAllServerInfo(ctx)
-	//
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//
-	//	if len(serverInfos) == 0 {
-	//		return nil, nil
-	//	}
-	//
-	// schedulerIDs, err := d.subTaskMgr.GetSchedulerIDs(gTaskID)
-	//
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//
-	// ids := make([]string, 0, len(schedulerIDs))
-	//
-	//	for _, id := range schedulerIDs {
-	//		if _, ok := serverInfos[id]; ok {
-	//			ids = append(ids, id)
-	//		}
-	//	}
-	//
-	// return ids, nil
+	if len(MockTiDBIDs) != 0 {
+		return MockTiDBIDs, nil
+	}
+
+	serverInfos, err := infosync.GetAllServerInfo(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(serverInfos) == 0 {
+		return nil, nil
+	}
+
+	return maps.Keys(serverInfos), nil
 }
