@@ -64,8 +64,8 @@ func NewHandle(ctx context.Context, se sessionctx.Context) (Handle, error) {
 	}, nil
 }
 
-func (h *Handle) SubmitGlobalTaskAndRun(tp string, concurrency int, taskMeta []byte) (taskID int64, done chan struct{}, err error) {
-	id, err := h.gm.AddNewTask(tp, concurrency, taskMeta)
+func (h *Handle) SubmitGlobalTaskAndRun(key, tp string, concurrency int, taskMeta []byte) (taskID int64, done chan struct{}, err error) {
+	id, err := h.gm.AddNewTask(key, tp, concurrency, taskMeta)
 	if err != nil {
 		return 0, nil, err
 	}
