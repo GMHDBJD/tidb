@@ -1130,6 +1130,10 @@ func (do *Domain) Init(
 	if err != nil {
 		return err
 	}
+
+	if err = do.initDistTaskLoop(ctx); err != nil {
+		return err
+	}
 	// step 3: start the ddl after the domain reload, avoiding some internal sql running before infoSchema construction.
 	err = do.ddl.Start(sysCtxPool)
 	if err != nil {
@@ -1155,10 +1159,6 @@ func (do *Domain) Init(
 		do.wg.Run(func() {
 			do.closestReplicaReadCheckLoop(ctx, pdCli)
 		}, "closestReplicaReadCheckLoop")
-	}
-
-	if err = do.initDistTaskLoop(ctx); err != nil {
-		return err
 	}
 
 	err = do.initLogBackup(ctx, pdCli)
@@ -1335,8 +1335,6 @@ func (do *Domain) initDistTaskLoop(ctx context.Context) error {
 
 	gm := storage.NewGlobalTaskManager(kv.WithInternalSourceType(ctx, kv.InternalDistTask), se1.(sessionctx.Context))
 	sm := storage.NewSubTaskManager(kv.WithInternalSourceType(ctx, kv.InternalDistTask), se2.(sessionctx.Context))
-	storage.SetGlobalTaskManager(gm)
-	storage.SetSubTaskManager(sm)
 	schedulerManager, err := scheduler.NewManagerBuilder().BuildManager(ctx, do.ddl.GetID(), gm, sm)
 	if err != nil {
 		se1.Close()
@@ -1344,10 +1342,16 @@ func (do *Domain) initDistTaskLoop(ctx context.Context) error {
 		return err
 	}
 
+	storage.SetGlobalTaskManager(gm)
+	storage.SetSubTaskManager(sm)
 	do.wg.Run(func() {
+		defer func() {
+			storage.SetGlobalTaskManager(nil)
+			storage.SetSubTaskManager(nil)
+			se1.Close()
+			se2.Close()
+		}()
 		do.distTaskFrameworkLoop(ctx, gm, sm, schedulerManager)
-		se1.Close()
-		se2.Close()
 	}, "distTaskFrameworkLoop")
 	return nil
 }

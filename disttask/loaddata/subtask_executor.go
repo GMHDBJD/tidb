@@ -29,12 +29,12 @@ import (
 )
 
 // ReadWriteSubtaskExecutor is an example subtask executor.
-type ReadWriteSubtaskExectutor struct {
+type ReadWriteSubtaskExecutor struct {
 	task MinimalTaskMeta
 }
 
 // Run implements the SubtaskExecutor interface.
-func (e *ReadWriteSubtaskExectutor) Run(ctx context.Context) error {
+func (e *ReadWriteSubtaskExecutor) Run(ctx context.Context) error {
 	var (
 		dataKVs       = kv.MakeRowsFromKvPairs(nil)
 		indexKVs      = kv.MakeRowsFromKvPairs(nil)
@@ -92,7 +92,7 @@ func init() {
 			if !ok {
 				return nil, errors.Errorf("invalid task type %T", minimalTask)
 			}
-			return &ReadWriteSubtaskExectutor{task: task}, nil
+			return &ReadWriteSubtaskExecutor{task: task}, nil
 		},
 	)
 }

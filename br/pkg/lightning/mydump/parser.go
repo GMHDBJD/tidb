@@ -668,6 +668,7 @@ func OpenReader(ctx context.Context, fileMeta SourceFileMeta, store storage.Exte
 	return
 }
 
+// GetColumnNames gets column names from tableInfo and permutation.
 func GetColumnNames(tableInfo *model.TableInfo, permutation []int) []string {
 	colIndexes := make([]int, 0, len(permutation))
 	for i := 0; i < len(permutation); i++ {
@@ -696,6 +697,7 @@ func GetColumnNames(tableInfo *model.TableInfo, permutation []int) []string {
 	return names
 }
 
+// BuildParser builds a parser.
 func BuildParser(
 	ctx context.Context,
 	cfg *config.Config,
