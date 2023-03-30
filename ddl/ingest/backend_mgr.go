@@ -75,6 +75,7 @@ func (m *backendCtxManager) Register(ctx context.Context, unique bool, jobID int
 	return bc, nil
 }
 
+// CreateLocalBackend creates a lightning local backend.
 func CreateLocalBackend(ctx context.Context, cfg *Config) (backend.Backend, error) {
 	tls, err := cfg.Lightning.ToTLS()
 	if err != nil {

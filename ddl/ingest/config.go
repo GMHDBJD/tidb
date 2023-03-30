@@ -36,6 +36,7 @@ type Config struct {
 	KeyspaceName string
 }
 
+// ConfigOptions is the options for creating a lightning local backend.
 type ConfigOptions struct {
 	memRoot MemRoot
 	dir     string
@@ -52,7 +53,7 @@ func WithMemRoot(memRoot MemRoot) Option {
 	}
 }
 
-// WithJobID changes the configOptions.jobID.
+// WithSortedKVDir changes the configOptions.dir.
 func WithSortedKVDir(dir string) Option {
 	return func(c *ConfigOptions) {
 		c.dir = dir
@@ -115,6 +116,7 @@ var (
 	compactConcurrency = 4
 )
 
+// GenerateLocalEngineConfig generates a new engine config for the lightning.
 func GenerateLocalEngineConfig(id int64, dbName, tbName string) *backend.EngineConfig {
 	return &backend.EngineConfig{
 		Local: backend.LocalEngineConfig{
