@@ -21,8 +21,6 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
 	verify "github.com/pingcap/tidb/br/pkg/lightning/verification"
-	"github.com/pingcap/tidb/disttask/framework/proto"
-	"github.com/pingcap/tidb/disttask/framework/scheduler"
 	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/util/logutil"
 	"go.uber.org/zap"
@@ -45,7 +43,7 @@ func (e *ReadWriteSubtaskExecutor) Run(ctx context.Context) error {
 
 	logutil.BgLogger().Info("subtask executor run", zap.Any("task", e.task))
 
-	parser, err := buildParser(ctx, e.task)
+	parser, err := BuildParser(ctx, e.task)
 	if err != nil {
 		return err
 	}
@@ -83,16 +81,25 @@ func (e *ReadWriteSubtaskExecutor) Run(ctx context.Context) error {
 	return nil
 }
 
-func init() {
-	scheduler.RegisterSubtaskExectorConstructor(
-		proto.LoadData,
-		// The order of the subtask executors is the same as the order of the subtasks.
-		func(minimalTask proto.MinimalTask, step int64) (scheduler.SubtaskExecutor, error) {
-			task, ok := minimalTask.(MinimalTaskMeta)
-			if !ok {
-				return nil, errors.Errorf("invalid task type %T", minimalTask)
+type LogicalSubtaskExecutor struct {
+	Task MinimalTaskMeta
+}
+
+func (e *LogicalSubtaskExecutor) Run(ctx context.Context) error {
+	logutil.BgLogger().Info("subtask executor run", zap.Any("task", e.Task))
+	parser, err := BuildParser(ctx, e.Task)
+	if err != nil {
+		return err
+	}
+	for {
+		err := parser.ReadRow()
+		if err != nil {
+			if errors.Cause(err) == io.EOF {
+				break
 			}
-			return &ReadWriteSubtaskExecutor{task: task}, nil
-		},
-	)
+			return err
+		}
+
+	}
+	return nil
 }

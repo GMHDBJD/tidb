@@ -25,6 +25,7 @@ import (
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/resourcemanager/pool/spool"
 	"github.com/pingcap/tidb/resourcemanager/util"
+	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/util/logutil"
 	"go.uber.org/zap"
 )
@@ -38,7 +39,7 @@ var (
 // ManagerBuilder is used to build a Manager.
 type ManagerBuilder struct {
 	newPool      func(name string, size int32, component util.Component, options ...spool.Option) (Pool, error)
-	newScheduler func(ctx context.Context, id string, taskID int64, subtaskTable SubtaskTable, pool Pool) InternalScheduler
+	newScheduler func(ctx context.Context, sctx sessionctx.Context, id string, taskID int64, subtaskTable SubtaskTable, pool Pool) InternalScheduler
 }
 
 // NewManagerBuilder creates a new ManagerBuilder.
@@ -57,7 +58,7 @@ func (b *ManagerBuilder) setPoolFactory(poolFactory func(name string, size int32
 }
 
 // setSchedulerFactory sets the schedulerFactory to mock the InternalScheduler in unit test.
-func (b *ManagerBuilder) setSchedulerFactory(schedulerFactory func(ctx context.Context, id string, taskID int64, subtaskTable SubtaskTable, pool Pool) InternalScheduler) {
+func (b *ManagerBuilder) setSchedulerFactory(schedulerFactory func(ctx context.Context, sctx sessionctx.Context, id string, taskID int64, subtaskTable SubtaskTable, pool Pool) InternalScheduler) {
 	b.newScheduler = schedulerFactory
 }
 
@@ -78,19 +79,21 @@ type Manager struct {
 	wg           sync.WaitGroup
 	ctx          context.Context
 	cancel       context.CancelFunc
+	sctx         sessionctx.Context
 	logCtx       context.Context
 	newPool      func(name string, size int32, component util.Component, options ...spool.Option) (Pool, error)
-	newScheduler func(ctx context.Context, id string, taskID int64, subtaskTable SubtaskTable, pool Pool) InternalScheduler
+	newScheduler func(ctx context.Context, sctx sessionctx.Context, id string, taskID int64, subtaskTable SubtaskTable, pool Pool) InternalScheduler
 }
 
 // BuildManager builds a Manager.
-func (b *ManagerBuilder) BuildManager(ctx context.Context, id string, globalTaskTable TaskTable, subtaskTable SubtaskTable) (*Manager, error) {
+func (b *ManagerBuilder) BuildManager(ctx context.Context, sctx sessionctx.Context, id string, globalTaskTable TaskTable, subtaskTable SubtaskTable) (*Manager, error) {
 	m := &Manager{
 		id:                   id,
 		globalTaskTable:      globalTaskTable,
 		subtaskTable:         subtaskTable,
 		subtaskExecutorPools: make(map[string]Pool),
 		logCtx:               logutil.WithKeyValue(context.Background(), "dist_task_manager", id),
+		sctx:                 sctx,
 		newPool:              b.newPool,
 		newScheduler:         b.newScheduler,
 	}
@@ -261,7 +264,7 @@ func (m *Manager) onRunnableTask(ctx context.Context, taskID int64, taskType str
 		return
 	}
 	// runCtx only used in scheduler.Run, cancel in m.fetchAndFastCancelTasks
-	scheduler := m.newScheduler(ctx, m.id, taskID, m.subtaskTable, m.subtaskExecutorPools[taskType])
+	scheduler := m.newScheduler(ctx, m.sctx, m.id, taskID, m.subtaskTable, m.subtaskExecutorPools[taskType])
 	scheduler.Start()
 	defer scheduler.Stop()
 	for {

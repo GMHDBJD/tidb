@@ -23,13 +23,14 @@ import (
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/resourcemanager/pool/spool"
 	"github.com/pingcap/tidb/resourcemanager/util"
+	"github.com/pingcap/tidb/sessionctx"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func TestManageTask(t *testing.T) {
 	b := NewManagerBuilder()
-	m, err := b.BuildManager(context.Background(), "test", nil, nil)
+	m, err := b.BuildManager(context.Background(), nil, "test", nil, nil)
 	require.NoError(t, err)
 	tasks := []*proto.Task{{ID: 1}, {ID: 2}}
 	newTasks := m.filterAlreadyHandlingTasks(tasks)
@@ -72,7 +73,7 @@ func TestOnRunnableTasks(t *testing.T) {
 	mockPool := &MockPool{}
 
 	b := NewManagerBuilder()
-	b.setSchedulerFactory(func(ctx context.Context, id string, taskID int64, subtaskTable SubtaskTable, pool Pool) InternalScheduler {
+	b.setSchedulerFactory(func(ctx context.Context, sctx sessionctx.Context, id string, taskID int64, subtaskTable SubtaskTable, pool Pool) InternalScheduler {
 		return mockInternalScheduler
 	})
 	b.setPoolFactory(func(name string, size int32, component util.Component, options ...spool.Option) (Pool, error) {
@@ -82,7 +83,7 @@ func TestOnRunnableTasks(t *testing.T) {
 	taskID := int64(1)
 	task := &proto.Task{ID: taskID, State: proto.TaskStateRunning, Step: 0, Type: "type"}
 
-	m, err := b.BuildManager(context.Background(), id, mockTaskTable, mockSubtaskTable)
+	m, err := b.BuildManager(context.Background(), nil, id, mockTaskTable, mockSubtaskTable)
 	require.NoError(t, err)
 
 	// no task
@@ -144,7 +145,7 @@ func TestManager(t *testing.T) {
 	mockInternalScheduler := &MockInternalScheduler{}
 	mockPool := &MockPool{}
 	b := NewManagerBuilder()
-	b.setSchedulerFactory(func(ctx context.Context, id string, taskID int64, subtaskTable SubtaskTable, pool Pool) InternalScheduler {
+	b.setSchedulerFactory(func(ctx context.Context, sctx sessionctx.Context, id string, taskID int64, subtaskTable SubtaskTable, pool Pool) InternalScheduler {
 		return mockInternalScheduler
 	})
 	b.setPoolFactory(func(name string, size int32, component util.Component, options ...spool.Option) (Pool, error) {
@@ -187,7 +188,7 @@ func TestManager(t *testing.T) {
 	}, func(opts *subtaskExecutorRegisterOptions) {
 		opts.PoolSize = 1
 	})
-	m, err := b.BuildManager(context.Background(), id, mockTaskTable, mockSubtaskTable)
+	m, err := b.BuildManager(context.Background(),nil, id, mockTaskTable, mockSubtaskTable)
 	require.NoError(t, err)
 	m.Start()
 	time.Sleep(5 * time.Second)

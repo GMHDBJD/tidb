@@ -21,6 +21,7 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/disttask/framework/proto"
+	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/util/logutil"
 	"go.uber.org/zap"
 )
@@ -29,6 +30,7 @@ import (
 type InternalSchedulerImpl struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
+	sctx         sessionctx.Context
 	id           string
 	taskID       int64
 	subtaskTable SubtaskTable
@@ -45,9 +47,10 @@ type InternalSchedulerImpl struct {
 }
 
 // NewInternalScheduler creates a new InternalScheduler.
-func NewInternalScheduler(ctx context.Context, id string, taskID int64, subtaskTable SubtaskTable, pool Pool) InternalScheduler {
+func NewInternalScheduler(ctx context.Context, sctx sessionctx.Context, id string, taskID int64, subtaskTable SubtaskTable, pool Pool) InternalScheduler {
 	logPrefix := fmt.Sprintf("id: %s, task_id: %d", id, taskID)
 	schedulerImpl := &InternalSchedulerImpl{
+		sctx:         sctx,
 		id:           id,
 		taskID:       taskID,
 		subtaskTable: subtaskTable,
@@ -97,7 +100,7 @@ func (s *InternalSchedulerImpl) Run(ctx context.Context, task *proto.Task) error
 
 	s.resetError()
 	logutil.Logger(s.logCtx).Info("scheduler run a step", zap.Any("step", task.Step), zap.Any("concurrency", task.Concurrency))
-	scheduler, err := createScheduler(task)
+	scheduler, err := createScheduler(s.sctx, task)
 	if err != nil {
 		s.onError(err)
 		return s.getError()
@@ -199,7 +202,7 @@ func (s *InternalSchedulerImpl) Rollback(ctx context.Context, task *proto.Task) 
 
 	s.resetError()
 	logutil.Logger(s.logCtx).Info("scheduler rollback a step", zap.Any("step", task.Step))
-	scheduler, err := createScheduler(task)
+	scheduler, err := createScheduler(s.sctx, task)
 	if err != nil {
 		s.onError(err)
 		return s.getError()
@@ -228,12 +231,12 @@ func (s *InternalSchedulerImpl) Rollback(ctx context.Context, task *proto.Task) 
 	return s.getError()
 }
 
-func createScheduler(task *proto.Task) (Scheduler, error) {
+func createScheduler(sctx sessionctx.Context, task *proto.Task) (Scheduler, error) {
 	constructor, ok := schedulerConstructors[task.Type]
 	if !ok {
 		return nil, errors.Errorf("constructor of scheduler for type %s not found", task.Type)
 	}
-	return constructor(task.Meta, task.Step)
+	return constructor(sctx, task.Meta, task.Step)
 }
 
 func createSubtaskExecutor(minimalTask proto.MinimalTask, tp string, step int64) (SubtaskExecutor, error) {

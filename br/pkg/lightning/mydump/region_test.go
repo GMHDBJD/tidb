@@ -152,7 +152,7 @@ func TestAllocateEngineIDs(t *testing.T) {
 	})
 
 	// Zero ratio = Uniform
-	AllocateEngineIDs(filesRegions, dataFileSizes, 100, 0.0, 1000)
+	AllocateEngineIDs(filesRegions, dataFileSizes, 100, 0.0, 2)
 	checkEngineSizes("batch size = 100, ratio = 0", map[int32]int{
 		0: 100,
 		1: 100,

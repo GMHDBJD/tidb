@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -30,6 +31,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tidb/disttask/framework/handle"
 	"github.com/pingcap/tidb/disttask/framework/proto"
+	"github.com/pingcap/tidb/disttask/framework/scheduler"
 	"github.com/pingcap/tidb/disttask/loaddata"
 	"github.com/pingcap/tidb/executor/asyncloaddata"
 	"github.com/pingcap/tidb/executor/importer"
@@ -262,12 +264,12 @@ func (e *LoadDataWorker) loadRemote(ctx context.Context) (int64, error) {
 		return 0, err2
 	}
 
-	if e.controller.ImportMode == importer.PhysicalImportMode {
-		// will not use session context
-		CloseSession(e.encodeWorker.ctx)
-		CloseSession(e.commitWorker.ctx)
-		return e.controller.PhysicalImport(ctx)
-	}
+	//	if e.controller.ImportMode == importer.PhysicalImportMode {
+	//		// will not use session context
+	//		CloseSession(e.encodeWorker.ctx)
+	//		CloseSession(e.commitWorker.ctx)
+	//		return e.controller.PhysicalImport(ctx)
+	//	}
 
 	dataReaderInfos := e.controller.GetLoadDataReaderInfos()
 	return e.Load(ctx, dataReaderInfos)
@@ -1016,6 +1018,9 @@ func (e *LoadDataWorker) buildDistTask(readerInfos []importer.LoadDataReaderInfo
 			DataCharacterSet:       "",
 			DataInvalidCharReplace: "",
 		},
+		Mode: loaddata.Mode{
+			Type: e.controller.ImportMode,
+		},
 	}
 
 	// generate file infos
@@ -1052,4 +1057,128 @@ func (e *LoadDataWorker) buildDistTask(readerInfos []importer.LoadDataReaderInfo
 	}
 
 	return task, nil
+}
+
+type ReadEncoder struct {
+	task loaddata.MinimalTaskMeta
+}
+
+func (e *ReadEncoder) Run(ctx context.Context) error {
+	logutil.BgLogger().Info("run read encoder", zap.Any("task", e.task))
+	parser, err := loaddata.BuildParser(ctx, e.task)
+	if err != nil {
+		return err
+	}
+
+	sysSession, err := CreateSession(e.task.Sctx)
+	if err != nil {
+		return err
+	}
+	defer CloseSession(sysSession)
+
+	err = ResetContextOfStmt(sysSession, &ast.LoadDataStmt{})
+	if err != nil {
+		return err
+	}
+	is := sessiontxn.GetTxnManager(e.task.Sctx).GetTxnInfoSchema()
+	tbl, ok := is.TableByID(e.task.Table.Info.ID)
+	if !ok {
+		return errors.Errorf("table %d not found", e.task.Table.Info.ID)
+	}
+
+	// copy the related variables to the new session
+	// I have no confident that all needed variables are copied :(
+	fromVars := e.task.Sctx.GetSessionVars()
+	toVars := sysSession.GetSessionVars()
+	toVars.User = fromVars.User
+	toVars.CurrentDB = e.task.Table.DBName
+
+	tableCols := tbl.VisibleCols()
+
+	cols, missingColName := table.FindCols(tableCols, e.task.Table.TargetColumns, tbl.Meta().PKIsHandle)
+	if missingColName != "" {
+		return errors.New("Unknown column '" + missingColName + "' in 'field list'")
+	}
+
+	insertColumns := make([]*table.Column, 0, len(cols))
+	columns := make([]*ast.ColumnName, 0, len(cols))
+	for _, col := range cols {
+		columns = append(columns, &ast.ColumnName{
+			Name: col.Name,
+		})
+		if !col.IsGenerated() {
+			// todo: should report error here, since in reorderColumns we report error if en(cols) != len(columnNames)
+			insertColumns = append(insertColumns, col)
+		}
+	}
+
+	hasExtraHandle := false
+	for _, col := range insertColumns {
+		if col.Name.L == model.ExtraHandleName.L {
+			hasExtraHandle = true
+			break
+		}
+	}
+
+	insertVal := &InsertValues{
+		baseExecutor:   newBaseExecutor(e.task.Sctx, nil, rand.Int()),
+		Table:          tbl,
+		Columns:        columns,
+		maxRowsInBatch: 100,
+		insertColumns:  insertColumns,
+		rowLen:         len(insertColumns),
+		hasExtraHandle: hasExtraHandle,
+	}
+	if len(insertColumns) > 0 {
+		insertVal.initEvalBuffer()
+	}
+
+	for {
+		if err := parser.ReadRow(); err != nil {
+			if errors.Cause(err) == io.EOF {
+				return nil
+			}
+			return err
+		}
+		row, err := insertVal.getRow(ctx, parser.LastRow().Row)
+		if err != nil {
+			return err
+		}
+		if err = sessiontxn.NewTxn(ctx, e.task.Sctx); err != nil {
+			logutil.BgLogger().Error("new txn failed", zap.Error(err))
+			return err
+		}
+		if err = insertVal.batchCheckAndInsert(ctx, [][]types.Datum{row}, insertVal.addRecord, true); err != nil {
+			logutil.BgLogger().Error("insert failed", zap.Error(err))
+			return err
+		}
+		e.task.Sctx.StmtCommit(ctx)
+		// Make sure that there are no retries when committing.
+		if err = e.task.Sctx.RefreshTxnCtx(ctx); err != nil {
+			logutil.BgLogger().Error("refresh txn ctx failed", zap.Error(err))
+			return err
+		}
+
+	}
+}
+
+func init() {
+	scheduler.RegisterSubtaskExectorConstructor(
+		proto.LoadData,
+		// The order of the subtask executors is the same as the order of the subtasks.
+		func(minimalTask proto.MinimalTask, step int64) (scheduler.SubtaskExecutor, error) {
+			task, ok := minimalTask.(loaddata.MinimalTaskMeta)
+			if !ok {
+				return nil, errors.Errorf("invalid task type %T", minimalTask)
+			}
+			switch task.Mode.Type {
+			case importer.LogicalImportMode:
+				return &loaddata.LogicalSubtaskExecutor{Task: task}, nil
+			case importer.PhysicalImportMode:
+				return &ReadEncoder{task: task}, nil
+			default:
+				return nil, errors.Errorf("invalid import mode %s", task.Mode.Type)
+			}
+		},
+	)
 }

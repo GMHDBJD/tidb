@@ -167,7 +167,7 @@ func createColumnPermutation(task MinimalTaskMeta) ([]int, error) {
 	return common.CreateColumnPermutation(task.Table.TargetColumns, ignoreColumns, task.Table.Info, log.Logger{Logger: logutil.BgLogger()})
 }
 
-func buildParser(ctx context.Context, task MinimalTaskMeta) (mydump.Parser, error) {
+func BuildParser(ctx context.Context, task MinimalTaskMeta) (mydump.Parser, error) {
 	store, err := getStore(ctx, task.Dir)
 	if err != nil {
 		return nil, err

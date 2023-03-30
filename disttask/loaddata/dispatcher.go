@@ -22,7 +22,6 @@ import (
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/util/logutil"
 	"go.uber.org/zap"
-	"golang.org/x/exp/maps"
 )
 
 // FlowHandle is the dispatcher for load data.
@@ -77,18 +76,18 @@ func generateSubtaskMetas(ctx context.Context, task *TaskMeta, concurrency int) 
 		return nil, err
 	}
 
-	subtaskMetaMap := make(map[int32]*SubtaskMeta)
-	for _, region := range tableRegions {
-		subtaskMeta, ok := subtaskMetaMap[region.EngineID]
-		if !ok {
-			subtaskMeta = &SubtaskMeta{
+	subtaskMetas := make([]*SubtaskMeta, 0, concurrency)
+	for i, region := range tableRegions {
+		idx := i % concurrency
+		if idx <= len(subtaskMetas) {
+			subtaskMetas = append(subtaskMetas, &SubtaskMeta{
 				Table:  task.Table,
 				Format: task.Format,
 				Dir:    task.Dir,
-			}
-			subtaskMetaMap[region.EngineID] = subtaskMeta
+				Mode:   task.Mode,
+			})
 		}
-		subtaskMeta.Chunks = append(subtaskMeta.Chunks, Chunk{
+		subtaskMetas[idx].Chunks = append(subtaskMetas[idx].Chunks, Chunk{
 			Path:         region.FileMeta.Path,
 			Offset:       region.Chunk.Offset,
 			EndOffset:    region.Chunk.EndOffset,
@@ -97,7 +96,7 @@ func generateSubtaskMetas(ctx context.Context, task *TaskMeta, concurrency int) 
 			RowIDMax:     region.Chunk.RowIDMax,
 		})
 	}
-	return maps.Values(subtaskMetaMap), nil
+	return subtaskMetas, nil
 }
 
 func init() {

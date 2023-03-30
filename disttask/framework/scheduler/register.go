@@ -16,12 +16,13 @@ package scheduler
 
 import (
 	"github.com/pingcap/tidb/disttask/framework/proto"
+	"github.com/pingcap/tidb/sessionctx"
 )
 
 type schedulerRegisterOptions struct{}
 
 // Constructor is the constructor of Scheduler.
-type Constructor func(taskMeta []byte, step int64) (Scheduler, error)
+type Constructor func(sctx sessionctx.Context, taskMeta []byte, step int64) (Scheduler, error)
 
 // RegisterOption is the register option of Scheduler.
 type RegisterOption func(opts *schedulerRegisterOptions)

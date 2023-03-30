@@ -18,12 +18,13 @@ import (
 	"testing"
 
 	"github.com/pingcap/tidb/disttask/framework/proto"
+	"github.com/pingcap/tidb/sessionctx"
 	"github.com/stretchr/testify/require"
 )
 
 func mockSchedulerOptionFunc(op *schedulerRegisterOptions) {}
 
-func mockSchedulerConstructor(task []byte, step int64) (Scheduler, error) {
+func mockSchedulerConstructor(sctx sessionctx.Context, task []byte, step int64) (Scheduler, error) {
 	return nil, nil
 }
 

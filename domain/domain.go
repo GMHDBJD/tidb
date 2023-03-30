@@ -1333,12 +1333,20 @@ func (do *Domain) initDistTaskLoop(ctx context.Context) error {
 		return err
 	}
 
-	gm := storage.NewGlobalTaskManager(kv.WithInternalSourceType(ctx, kv.InternalDistTask), se1.(sessionctx.Context))
-	sm := storage.NewSubTaskManager(kv.WithInternalSourceType(ctx, kv.InternalDistTask), se2.(sessionctx.Context))
-	schedulerManager, err := scheduler.NewManagerBuilder().BuildManager(ctx, do.ddl.GetID(), gm, sm)
+	se3, err := do.sysExecutorFactory(do)
 	if err != nil {
 		se1.Close()
 		se2.Close()
+		return err
+	}
+
+	gm := storage.NewGlobalTaskManager(kv.WithInternalSourceType(ctx, kv.InternalDistTask), se1.(sessionctx.Context))
+	sm := storage.NewSubTaskManager(kv.WithInternalSourceType(ctx, kv.InternalDistTask), se2.(sessionctx.Context))
+	schedulerManager, err := scheduler.NewManagerBuilder().BuildManager(ctx, se3.(sessionctx.Context), do.ddl.GetID(), gm, sm)
+	if err != nil {
+		se1.Close()
+		se2.Close()
+		se3.Close()
 		return err
 	}
 
@@ -1350,6 +1358,7 @@ func (do *Domain) initDistTaskLoop(ctx context.Context) error {
 			storage.SetSubTaskManager(nil)
 			se1.Close()
 			se2.Close()
+			se3.Close()
 		}()
 		do.distTaskFrameworkLoop(ctx, gm, sm, schedulerManager)
 	}, "distTaskFrameworkLoop")

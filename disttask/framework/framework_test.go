@@ -24,6 +24,7 @@ import (
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/disttask/framework/scheduler"
 	"github.com/pingcap/tidb/disttask/framework/storage"
+	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/testkit"
 	"github.com/stretchr/testify/require"
 )
@@ -83,7 +84,7 @@ func TestFrameworkStartUp(t *testing.T) {
 	dispatcher.ClearTaskFlowHandle()
 	dispatcher.RegisterTaskFlowHandle("type1", &testFlowHandle{})
 	scheduler.ClearSchedulers()
-	scheduler.RegisterSchedulerConstructor("type1", func(_ []byte, _ int64) (scheduler.Scheduler, error) {
+	scheduler.RegisterSchedulerConstructor("type1", func(_ sessionctx.Context, _ []byte, _ int64) (scheduler.Scheduler, error) {
 		return &testScheduler{}, nil
 	})
 	scheduler.RegisterSubtaskExectorConstructor("type1", func(_ proto.MinimalTask, _ int64) (scheduler.SubtaskExecutor, error) {

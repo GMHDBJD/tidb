@@ -20,6 +20,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
+	"github.com/pingcap/tidb/sessionctx"
 )
 
 // TaskStep of LoadData.
@@ -31,6 +32,7 @@ const (
 type TaskMeta struct {
 	Table     Table
 	Format    Format
+	Mode      Mode
 	Dir       string
 	FileInfos []FileInfo
 }
@@ -41,15 +43,18 @@ type SubtaskMeta struct {
 	Table  Table
 	Format Format
 	Dir    string
+	Mode   Mode
 	Chunks []Chunk
 }
 
 // MinimalTaskMeta is the minimal task of LoadData.
 // Scheduler will split the subtask into minimal tasks(Chunks -> Chunk)
 type MinimalTaskMeta struct {
+	Sctx   sessionctx.Context
 	Table  Table
 	Format Format
 	Dir    string
+	Mode   Mode
 	Chunk  Chunk
 	Writer *backend.LocalEngineWriter
 }
@@ -75,6 +80,16 @@ type Format struct {
 	DataCharacterSet       string
 	DataInvalidCharReplace string
 }
+
+type Mode struct {
+	Type     string
+	Physical Physical
+	Logical  Logical
+}
+
+type Physical struct{}
+
+type Logical struct{}
 
 // CSV records the CSV format information.
 type CSV struct {
