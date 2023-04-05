@@ -22,7 +22,6 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/encode"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
-	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
@@ -164,21 +163,12 @@ func buildEncoder(ctx context.Context, task MinimalTaskMeta) (importer.KvEncoder
 	return importer.NewTableKVEncoder(cfg, task.AstVars.ColumnAssignments, task.AstVars.ColumnsAndUserVars, task.AstVars.FieldMappings, task.AstVars.InsertColumns)
 }
 
-func createColumnPermutation(task MinimalTaskMeta) ([]int, error) {
-	var ignoreColumns map[string]struct{}
-	return common.CreateColumnPermutation(task.Table.TargetColumns, ignoreColumns, task.Table.Info, log.Logger{Logger: logutil.BgLogger()})
-}
-
 func buildParser(ctx context.Context, task MinimalTaskMeta) (mydump.Parser, error) {
 	store, err := getStore(ctx, task.Dir)
 	if err != nil {
 		return nil, err
 	}
 	sourceType, err := transformSourceType(task.Format.Type)
-	if err != nil {
-		return nil, err
-	}
-	permutation, err := createColumnPermutation(task)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +196,7 @@ func buildParser(ctx context.Context, task MinimalTaskMeta) (mydump.Parser, erro
 		PrevRowIDMax: task.Chunk.PrevRowIDMax,
 	}
 
-	parser, err := mydump.BuildParser(ctx, cfg, fileMeta, chunk, permutation, nil, store, task.Table.Info)
+	parser, err := mydump.BuildParser(ctx, cfg, fileMeta, chunk, nil, store, task.Table.Info)
 	if err != nil {
 		return nil, err
 	}

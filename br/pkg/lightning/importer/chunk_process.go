@@ -34,6 +34,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/worker"
 	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tidb/keyspace"
+	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/types"
 	"go.uber.org/zap"
 )
@@ -56,9 +57,12 @@ func newChunkProcessor(
 	store storage.ExternalStorage,
 	tableInfo *checkpoints.TidbTableInfo,
 ) (*chunkProcessor, error) {
-	parser, err := mydump.BuildParser(ctx, cfg, chunk.FileMeta, chunk.Chunk, chunk.ColumnPermutation, ioWorkers, store, tableInfo.Core)
+	parser, err := mydump.BuildParser(ctx, cfg, chunk.FileMeta, chunk.Chunk, ioWorkers, store, tableInfo.Core)
 	if err != nil {
 		return nil, err
+	}
+	if len(chunk.ColumnPermutation) > 0 {
+		parser.SetColumns(getColumnNames(tableInfo.Core, chunk.ColumnPermutation))
 	}
 
 	return &chunkProcessor{
@@ -66,6 +70,34 @@ func newChunkProcessor(
 		index:  index,
 		chunk:  chunk,
 	}, nil
+}
+
+func getColumnNames(tableInfo *model.TableInfo, permutation []int) []string {
+	colIndexes := make([]int, 0, len(permutation))
+	for i := 0; i < len(permutation); i++ {
+		colIndexes = append(colIndexes, -1)
+	}
+	colCnt := 0
+	for i, p := range permutation {
+		if p >= 0 {
+			colIndexes[p] = i
+			colCnt++
+		}
+	}
+
+	names := make([]string, 0, colCnt)
+	for _, idx := range colIndexes {
+		// skip columns with index -1
+		if idx >= 0 {
+			// original fields contains _tidb_rowid field
+			if idx == len(tableInfo.Columns) {
+				names = append(names, model.ExtraHandleName.O)
+			} else {
+				names = append(names, tableInfo.Columns[idx].Name.O)
+			}
+		}
+	}
+	return names
 }
 
 func (cr *chunkProcessor) process(

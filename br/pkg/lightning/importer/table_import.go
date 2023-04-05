@@ -245,7 +245,7 @@ func (tr *TableImporter) populateChunks(ctx context.Context, rc *Controller, cp 
 				Timestamp:         timestamp,
 			}
 			if len(region.Chunk.Columns) > 0 {
-				perms, err := common.ParseColumnPermutations(
+				perms, err := parseColumnPermutations(
 					tr.tableInfo.Core,
 					region.Chunk.Columns,
 					tr.ignoreColumns,
@@ -295,12 +295,46 @@ func (tr *TableImporter) RebaseChunkRowIDs(cp *checkpoints.TableCheckpoint, rowI
 //
 // The argument `columns` _must_ be in lower case.
 func (tr *TableImporter) initializeColumns(columns []string, ccp *checkpoints.ChunkCheckpoint) error {
-	colPerm, err := common.CreateColumnPermutation(columns, tr.ignoreColumns, tr.tableInfo.Core, tr.logger)
+	colPerm, err := createColumnPermutation(columns, tr.ignoreColumns, tr.tableInfo.Core, tr.logger)
 	if err != nil {
 		return err
 	}
 	ccp.ColumnPermutation = colPerm
 	return nil
+}
+
+func createColumnPermutation(
+	columns []string,
+	ignoreColumns map[string]struct{},
+	tableInfo *model.TableInfo,
+	logger log.Logger,
+) ([]int, error) {
+	var colPerm []int
+	if len(columns) == 0 {
+		colPerm = make([]int, 0, len(tableInfo.Columns)+1)
+		shouldIncludeRowID := common.TableHasAutoRowID(tableInfo)
+
+		// no provided columns, so use identity permutation.
+		for i, col := range tableInfo.Columns {
+			idx := i
+			if _, ok := ignoreColumns[col.Name.L]; ok {
+				idx = -1
+			} else if col.IsGenerated() {
+				idx = -1
+			}
+			colPerm = append(colPerm, idx)
+		}
+		if shouldIncludeRowID {
+			colPerm = append(colPerm, -1)
+		}
+	} else {
+		var err error
+		colPerm, err = parseColumnPermutations(tableInfo, columns, ignoreColumns, logger)
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
+	}
+	return colPerm, nil
 }
 
 func (tr *TableImporter) importEngines(pCtx context.Context, rc *Controller, cp *checkpoints.TableCheckpoint) error {
@@ -1040,6 +1074,75 @@ func (tr *TableImporter) postProcess(
 	}
 
 	return true, nil
+}
+
+func parseColumnPermutations(
+	tableInfo *model.TableInfo,
+	columns []string,
+	ignoreColumns map[string]struct{},
+	logger log.Logger,
+) ([]int, error) {
+	colPerm := make([]int, 0, len(tableInfo.Columns)+1)
+
+	columnMap := make(map[string]int)
+	for i, column := range columns {
+		columnMap[column] = i
+	}
+
+	tableColumnMap := make(map[string]int)
+	for i, col := range tableInfo.Columns {
+		tableColumnMap[col.Name.L] = i
+	}
+
+	// check if there are some unknown columns
+	var unknownCols []string
+	for _, c := range columns {
+		if _, ok := tableColumnMap[c]; !ok && c != model.ExtraHandleName.L {
+			if _, ignore := ignoreColumns[c]; !ignore {
+				unknownCols = append(unknownCols, c)
+			}
+		}
+	}
+
+	if len(unknownCols) > 0 {
+		return colPerm, common.ErrUnknownColumns.GenWithStackByArgs(strings.Join(unknownCols, ","), tableInfo.Name)
+	}
+
+	for _, colInfo := range tableInfo.Columns {
+		if i, ok := columnMap[colInfo.Name.L]; ok {
+			if _, ignore := ignoreColumns[colInfo.Name.L]; !ignore {
+				colPerm = append(colPerm, i)
+			} else {
+				logger.Debug("column ignored by user requirements",
+					zap.Stringer("table", tableInfo.Name),
+					zap.String("colName", colInfo.Name.O),
+					zap.Stringer("colType", &colInfo.FieldType),
+				)
+				colPerm = append(colPerm, -1)
+			}
+		} else {
+			if len(colInfo.GeneratedExprString) == 0 {
+				logger.Warn("column missing from data file, going to fill with default value",
+					zap.Stringer("table", tableInfo.Name),
+					zap.String("colName", colInfo.Name.O),
+					zap.Stringer("colType", &colInfo.FieldType),
+				)
+			}
+			colPerm = append(colPerm, -1)
+		}
+	}
+	// append _tidb_rowid column
+	rowIDIdx := -1
+	if i, ok := columnMap[model.ExtraHandleName.L]; ok {
+		if _, ignored := ignoreColumns[model.ExtraHandleName.L]; !ignored {
+			rowIDIdx = i
+		}
+	}
+	// FIXME: the schema info for tidb backend is not complete, so always add the _tidb_rowid field.
+	// Other logic should ignore this extra field if not needed.
+	colPerm = append(colPerm, rowIDIdx)
+
+	return colPerm, nil
 }
 
 func (tr *TableImporter) importKV(

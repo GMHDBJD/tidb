@@ -670,42 +670,12 @@ func OpenReader(ctx context.Context, fileMeta SourceFileMeta, store storage.Exte
 	return
 }
 
-// GetColumnNames gets column names from tableInfo and permutation.
-func GetColumnNames(tableInfo *model.TableInfo, permutation []int) []string {
-	colIndexes := make([]int, 0, len(permutation))
-	for i := 0; i < len(permutation); i++ {
-		colIndexes = append(colIndexes, -1)
-	}
-	colCnt := 0
-	for i, p := range permutation {
-		if p >= 0 {
-			colIndexes[p] = i
-			colCnt++
-		}
-	}
-
-	names := make([]string, 0, colCnt)
-	for _, idx := range colIndexes {
-		// skip columns with index -1
-		if idx >= 0 {
-			// original fields contains _tidb_rowid field
-			if idx == len(tableInfo.Columns) {
-				names = append(names, model.ExtraHandleName.O)
-			} else {
-				names = append(names, tableInfo.Columns[idx].Name.O)
-			}
-		}
-	}
-	return names
-}
-
 // BuildParser builds a parser.
 func BuildParser(
 	ctx context.Context,
 	cfg *config.Config,
 	fileMeta SourceFileMeta,
 	chunk Chunk,
-	permutation []int,
 	ioWorkers *worker.Pool,
 	store storage.ExternalStorage,
 	tableInfo *model.TableInfo,
@@ -750,9 +720,6 @@ func BuildParser(
 			return nil, errors.Trace(err)
 		}
 		parser.SetRowID(chunk.PrevRowIDMax)
-	}
-	if len(permutation) > 0 {
-		parser.SetColumns(GetColumnNames(tableInfo, permutation))
 	}
 	return parser, nil
 }

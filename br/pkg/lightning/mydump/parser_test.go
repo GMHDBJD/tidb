@@ -23,13 +23,8 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
-	"github.com/pingcap/tidb/ddl"
-	"github.com/pingcap/tidb/parser"
-	"github.com/pingcap/tidb/parser/ast"
-	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/types"
-	tmock "github.com/pingcap/tidb/util/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -882,33 +877,4 @@ func TestMoreEmptyFiles(t *testing.T) {
 
 	runTestCases(t, mysql.ModeNone, 1, testCases)
 	runTestCases(t, mysql.ModeNoBackslashEscapes, 1, testCases)
-}
-
-func TestGetColumnsNames(t *testing.T) {
-	p := parser.New()
-	p.SetSQLMode(mysql.ModeANSIQuotes)
-	se := tmock.NewContext()
-	node, err := p.ParseOneStmt(`
-	CREATE TABLE "table" (
-		a INT,
-		b INT,
-		c INT,
-		KEY (b)
-	)`, "", "")
-	require.NoError(t, err)
-	tableInfo, err := ddl.MockTableInfo(se, node.(*ast.CreateTableStmt), 0xabcdef)
-	require.NoError(t, err)
-	tableInfo.State = model.StatePublic
-
-	require.Equal(t, []string{"a", "b", "c"}, mydump.GetColumnNames(tableInfo, []int{0, 1, 2, -1}))
-	require.Equal(t, []string{"b", "a", "c"}, mydump.GetColumnNames(tableInfo, []int{1, 0, 2, -1}))
-	require.Equal(t, []string{"b", "c"}, mydump.GetColumnNames(tableInfo, []int{-1, 0, 1, -1}))
-	require.Equal(t, []string{"a", "b"}, mydump.GetColumnNames(tableInfo, []int{0, 1, -1, -1}))
-	require.Equal(t, []string{"c", "a"}, mydump.GetColumnNames(tableInfo, []int{1, -1, 0, -1}))
-	require.Equal(t, []string{"b"}, mydump.GetColumnNames(tableInfo, []int{-1, 0, -1, -1}))
-	require.Equal(t, []string{"_tidb_rowid", "a", "b", "c"}, mydump.GetColumnNames(tableInfo, []int{1, 2, 3, 0}))
-	require.Equal(t, []string{"b", "a", "c", "_tidb_rowid"}, mydump.GetColumnNames(tableInfo, []int{1, 0, 2, 3}))
-	require.Equal(t, []string{"b", "_tidb_rowid", "c"}, mydump.GetColumnNames(tableInfo, []int{-1, 0, 2, 1}))
-	require.Equal(t, []string{"c", "_tidb_rowid", "a"}, mydump.GetColumnNames(tableInfo, []int{2, -1, 0, 1}))
-	require.Equal(t, []string{"_tidb_rowid", "b"}, mydump.GetColumnNames(tableInfo, []int{-1, 1, -1, 0}))
 }

@@ -730,7 +730,7 @@ func (ci *checkpointCheckItem) checkpointIsValid(ctx context.Context, tableInfo 
 	}
 	info := dbInfos[tableInfo.DB].Tables[tableInfo.Name]
 	if info != nil {
-		permFromTiDB, err := common.ParseColumnPermutations(info.Core, columns, nil, log.FromContext(ctx))
+		permFromTiDB, err := parseColumnPermutations(info.Core, columns, nil, log.FromContext(ctx))
 		if err != nil {
 			msgs = append(msgs, fmt.Sprintf("failed to calculate columns %s, table %s's info has changed,"+
 				"consider remove this checkpoint, and start import again.", err.Error(), uniqueName))
