@@ -18,8 +18,11 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
+	"github.com/pingcap/tidb/executor/importer"
+	"github.com/pingcap/tidb/parser/ast"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
+	"github.com/pingcap/tidb/table"
 )
 
 // TaskStep of LoadData.
@@ -29,29 +32,38 @@ const (
 
 // TaskMeta is the task of LoadData.
 type TaskMeta struct {
-	Table     Table
-	Format    Format
-	Dir       string
-	FileInfos []FileInfo
+	Table       Table
+	Format      Format
+	Dir         string
+	FileInfos   []FileInfo
+	Mode        Mode
+	SessionVars SessionVars
+	AstVars     AstVars
 }
 
 // SubtaskMeta is the subtask of LoadData.
 // Dispatcher will split the task into subtasks(FileInfos -> Chunks)
 type SubtaskMeta struct {
-	Table  Table
-	Format Format
-	Dir    string
-	Chunks []Chunk
+	Table       Table
+	Format      Format
+	Dir         string
+	Chunks      []Chunk
+	Mode        Mode
+	SessionVars SessionVars
+	AstVars     AstVars
 }
 
 // MinimalTaskMeta is the minimal task of LoadData.
 // Scheduler will split the subtask into minimal tasks(Chunks -> Chunk)
 type MinimalTaskMeta struct {
-	Table  Table
-	Format Format
-	Dir    string
-	Chunk  Chunk
-	Writer *backend.LocalEngineWriter
+	Table       Table
+	Format      Format
+	Dir         string
+	Chunk       Chunk
+	Engine      *backend.OpenedEngine
+	Mode        Mode
+	SessionVars SessionVars
+	AstVars     AstVars
 }
 
 // IsMinimalTask implements the MinimalTask interface.
@@ -84,7 +96,6 @@ type CSV struct {
 
 // SQLDump records the SQL dump format information.
 type SQLDump struct {
-	SQLMode mysql.SQLMode
 }
 
 // Parquet records the Parquet format information.
@@ -105,4 +116,26 @@ type FileInfo struct {
 	Path     string
 	Size     int64
 	RealSize int64
+}
+
+type Mode struct {
+	Type     string
+	Logical  Logical
+	Physical Physical
+}
+
+type Logical struct{}
+
+type Physical struct{}
+
+type SessionVars struct {
+	SQLMode mysql.SQLMode
+	SysVars map[string]string
+}
+
+type AstVars struct {
+	ColumnAssignments  []*ast.Assignment
+	ColumnsAndUserVars []*ast.ColumnNameOrUserVar
+	FieldMappings      []*importer.FieldMapping
+	InsertColumns      []*table.Column
 }

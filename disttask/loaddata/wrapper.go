@@ -22,7 +22,6 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/encode"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
-	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
@@ -145,8 +144,7 @@ func getStore(ctx context.Context, dir string) (storage.ExternalStorage, error) 
 	return storage.New(ctx, b, opt)
 }
 
-func buildEncoder(ctx context.Context, task MinimalTaskMeta) (encode.Encoder, error) {
-	encodeBuilder := local.NewEncodingBuilder(ctx)
+func buildEncoder(ctx context.Context, task MinimalTaskMeta) (importer.KvEncoder, error) {
 	idAlloc := kv.NewPanickingAllocators(task.Chunk.PrevRowIDMax)
 	tbl, err := tables.TableFromMeta(idAlloc, task.Table.Info)
 	if err != nil {
@@ -154,13 +152,16 @@ func buildEncoder(ctx context.Context, task MinimalTaskMeta) (encode.Encoder, er
 	}
 	cfg := &encode.EncodingConfig{
 		SessionOptions: encode.SessionOptions{
-			SQLMode:        task.Format.SQLDump.SQLMode,
+			SQLMode:        task.SessionVars.SQLMode,
+			Timestamp:      0,
+			SysVars:        task.SessionVars.SysVars,
 			AutoRandomSeed: task.Chunk.PrevRowIDMax,
 		},
+		Path:   task.Chunk.Path,
 		Table:  tbl,
 		Logger: log.Logger{Logger: logutil.BgLogger()},
 	}
-	return encodeBuilder.NewEncoder(ctx, cfg)
+	return importer.NewTableKVEncoder(cfg, task.AstVars.ColumnAssignments, task.AstVars.ColumnsAndUserVars, task.AstVars.FieldMappings, task.AstVars.InsertColumns)
 }
 
 func createColumnPermutation(task MinimalTaskMeta) ([]int, error) {
@@ -190,7 +191,7 @@ func buildParser(ctx context.Context, task MinimalTaskMeta) (mydump.Parser, erro
 			DataInvalidCharReplace: task.Format.DataInvalidCharReplace,
 		},
 		TiDB: config.DBStore{
-			SQLMode: task.Format.SQLDump.SQLMode,
+			SQLMode: task.SessionVars.SQLMode,
 		},
 	}
 	fileMeta := mydump.SourceFileMeta{

@@ -82,9 +82,12 @@ func generateSubtaskMetas(ctx context.Context, task *TaskMeta, concurrency int) 
 		subtaskMeta, ok := subtaskMetaMap[region.EngineID]
 		if !ok {
 			subtaskMeta = &SubtaskMeta{
-				Table:  task.Table,
-				Format: task.Format,
-				Dir:    task.Dir,
+				Table:       task.Table,
+				Format:      task.Format,
+				Dir:         task.Dir,
+				Mode:        task.Mode,
+				SessionVars: task.SessionVars,
+				AstVars:     task.AstVars,
 			}
 			subtaskMetaMap[region.EngineID] = subtaskMeta
 		}

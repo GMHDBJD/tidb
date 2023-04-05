@@ -31,7 +31,6 @@ type ImportScheduler struct {
 	taskMeta         *TaskMeta
 	lightningBackend *backend.Backend
 	openedEngine     *backend.OpenedEngine
-	writers          []*backend.LocalEngineWriter
 }
 
 // InitSubtaskExecEnv is used to initialize the environment for the subtask executor.
@@ -63,17 +62,18 @@ func (s *ImportScheduler) SplitSubtask(ctx context.Context, bs []byte) ([]proto.
 
 	miniTask := make([]proto.MinimalTask, 0, len(subtaskMeta.Chunks))
 	for _, chunk := range subtaskMeta.Chunks {
-		writer, err := s.openedEngine.LocalWriter(ctx, &backend.LocalWriterConfig{IsKVSorted: subtaskMeta.Table.IsRowOrdered})
 		if err != nil {
 			return nil, err
 		}
-		s.writers = append(s.writers, writer)
 		miniTask = append(miniTask, MinimalTaskMeta{
-			Table:  subtaskMeta.Table,
-			Format: subtaskMeta.Format,
-			Dir:    subtaskMeta.Dir,
-			Chunk:  chunk,
-			Writer: writer,
+			Table:       subtaskMeta.Table,
+			Format:      subtaskMeta.Format,
+			Dir:         subtaskMeta.Dir,
+			Chunk:       chunk,
+			Engine:      s.openedEngine,
+			Mode:        s.taskMeta.Mode,
+			SessionVars: s.taskMeta.SessionVars,
+			AstVars:     s.taskMeta.AstVars,
 		})
 	}
 	return miniTask, nil
@@ -85,11 +85,6 @@ func (s *ImportScheduler) CleanupSubtaskExecEnv(ctx context.Context) error {
 	closedEngine, err := s.openedEngine.Close(ctx)
 	if err != nil {
 		return err
-	}
-	for _, writer := range s.writers {
-		if _, err := writer.Close(ctx); err != nil {
-			return err
-		}
 	}
 	if err := closedEngine.Import(ctx, int64(config.SplitRegionSize), int64(config.SplitRegionKeys)); err != nil {
 		return err

@@ -110,6 +110,27 @@ func firstErr(errors ...error) error {
 	return nil
 }
 
+func NewChunkProcessor(
+	parser mydump.Parser,
+	encoder KvEncoder,
+	chunkInfo *checkpoints.ChunkCheckpoint,
+	logger *zap.Logger,
+	dataWriter *backend.LocalEngineWriter,
+	indexWriter *backend.LocalEngineWriter,
+	kvStore tidbkv.Storage,
+) *chunkProcessor {
+	return &chunkProcessor{
+		parser:      parser,
+		encoder:     encoder,
+		chunkInfo:   chunkInfo,
+		logger:      logger,
+		kvsCh:       make(chan []deliveredRow, maxKVQueueSize),
+		dataWriter:  dataWriter,
+		indexWriter: indexWriter,
+		kvStore:     kvStore,
+	}
+}
+
 // chunkProcessor process data chunk, it encodes and writes KV to local disk.
 type chunkProcessor struct {
 	parser      mydump.Parser
@@ -120,11 +141,11 @@ type chunkProcessor struct {
 	indexWriter *backend.LocalEngineWriter
 
 	checksum verify.KVChecksum
-	encoder  kvEncoder
+	encoder  KvEncoder
 	kvStore  tidbkv.Storage
 }
 
-func (p *chunkProcessor) process(ctx context.Context) error {
+func (p *chunkProcessor) Process(ctx context.Context) error {
 	deliverCompleteCh := make(chan deliverResult)
 	go func() {
 		defer close(deliverCompleteCh)
@@ -290,7 +311,7 @@ func (p *chunkProcessor) deliverLoop(ctx context.Context) error {
 	return nil
 }
 
-func (p *chunkProcessor) close(ctx context.Context) {
+func (p *chunkProcessor) Close(ctx context.Context) {
 	if err2 := p.parser.Close(); err2 != nil {
 		p.logger.Error("failed to close parser", zap.Error(err2))
 	}

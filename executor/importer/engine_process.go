@@ -88,7 +88,7 @@ func (ep *engineProcessor) localSort(ctx context.Context, dataEngine *backend.Op
 	for _, chunk := range ep.chunks {
 		var (
 			parser                  mydump.Parser
-			encoder                 kvEncoder
+			encoder                 KvEncoder
 			dataWriter, indexWriter *backend.LocalEngineWriter
 		)
 		closer.reset()
@@ -120,23 +120,22 @@ func (ep *engineProcessor) localSort(ctx context.Context, dataEngine *backend.Op
 			return err2
 		})
 
-		cp := &chunkProcessor{
-			parser:      parser,
-			chunkInfo:   chunk,
-			logger:      ep.logger.With(zap.String("key", chunk.GetKey())),
-			kvsCh:       make(chan []deliveredRow, maxKVQueueSize),
-			dataWriter:  dataWriter,
-			indexWriter: indexWriter,
-			encoder:     encoder,
-			kvStore:     ep.kvStore,
-		}
+		cp := NewChunkProcessor(
+			parser,
+			encoder,
+			chunk,
+			ep.logger.With(zap.String("key", chunk.GetKey())),
+			dataWriter,
+			indexWriter,
+			ep.kvStore,
+		)
 		// todo: process in parallel
-		err = cp.process(ctx)
+		err = cp.Process(ctx)
 		if err != nil {
 			return err
 		}
 		// chunk process is responsible to close data/index writer
-		cp.close(ctx)
+		cp.Close(ctx)
 	}
 	return nil
 }

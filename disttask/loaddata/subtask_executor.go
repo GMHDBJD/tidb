@@ -16,14 +16,13 @@ package loaddata
 
 import (
 	"context"
-	"io"
 
 	"github.com/pingcap/errors"
-	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
-	verify "github.com/pingcap/tidb/br/pkg/lightning/verification"
+	"github.com/pingcap/tidb/br/pkg/lightning/backend"
+	"github.com/pingcap/tidb/br/pkg/lightning/checkpoints"
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/disttask/framework/scheduler"
-	"github.com/pingcap/tidb/keyspace"
+	"github.com/pingcap/tidb/executor/importer"
 	"github.com/pingcap/tidb/util/logutil"
 	"go.uber.org/zap"
 )
@@ -33,18 +32,8 @@ type ReadWriteSubtaskExecutor struct {
 	task MinimalTaskMeta
 }
 
-// Run implements the SubtaskExecutor interface.
 func (e *ReadWriteSubtaskExecutor) Run(ctx context.Context) error {
-	var (
-		dataKVs       = kv.MakeRowsFromKvPairs(nil)
-		indexKVs      = kv.MakeRowsFromKvPairs(nil)
-		offset        = int64(0)
-		dataChecksum  = verify.NewKVChecksumWithKeyspace(keyspace.CodecV1)
-		indexChecksum = verify.NewKVChecksumWithKeyspace(keyspace.CodecV1)
-	)
-
 	logutil.BgLogger().Info("subtask executor run", zap.Any("task", e.task))
-
 	parser, err := buildParser(ctx, e.task)
 	if err != nil {
 		return err
@@ -53,33 +42,34 @@ func (e *ReadWriteSubtaskExecutor) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	permutation, err := createColumnPermutation(e.task)
+	dataWriter, err := e.task.Engine.LocalWriter(ctx, &backend.LocalWriterConfig{IsKVSorted: e.task.Table.IsRowOrdered})
+	if err != nil {
+		return err
+	}
+	indexWriter, err := e.task.Engine.LocalWriter(ctx, &backend.LocalWriterConfig{})
 	if err != nil {
 		return err
 	}
 
-	for {
-		err := parser.ReadRow()
-		if err != nil {
-			if errors.Cause(err) == io.EOF {
-				break
-			}
-			return err
-		}
-
-		lastRow := parser.LastRow()
-		kvs, err := encoder.Encode(lastRow.Row, lastRow.RowID, permutation, offset)
-		if err != nil {
-			return err
-		}
-		offset, _ = parser.Pos()
-		parser.RecycleRow(lastRow)
-		kvs.ClassifyAndAppend(&dataKVs, dataChecksum, &indexKVs, indexChecksum)
-		logutil.BgLogger().Info("sub task executor run", zap.Any("dataKVs", dataKVs), zap.Any("indexKVs", indexKVs), zap.Any("column", e.task.Table.TargetColumns))
-		if err := e.task.Writer.WriteRows(ctx, e.task.Table.TargetColumns, dataKVs); err != nil {
-			return err
-		}
+	cp := importer.NewChunkProcessor(
+		parser,
+		encoder,
+		&checkpoints.ChunkCheckpoint{
+			Key: checkpoints.ChunkCheckpointKey{
+				Path:   e.task.Chunk.Path,
+				Offset: e.task.Chunk.Offset,
+			},
+		},
+		logutil.BgLogger(),
+		dataWriter,
+		indexWriter,
+		nil,
+	)
+	err = cp.Process(ctx)
+	if err != nil {
+		return err
 	}
+	cp.Close(ctx)
 	return nil
 }
 

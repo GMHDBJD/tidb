@@ -220,7 +220,7 @@ func (ti *tableImporter) getParser(ctx context.Context, chunk *checkpoints.Chunk
 	return parser, nil
 }
 
-func (ti *tableImporter) getKVEncoder(chunk *checkpoints.ChunkCheckpoint) (kvEncoder, error) {
+func (ti *tableImporter) getKVEncoder(chunk *checkpoints.ChunkCheckpoint) (KvEncoder, error) {
 	cfg := &encode.EncodingConfig{
 		SessionOptions: encode.SessionOptions{
 			SQLMode:        ti.sqlMode,
@@ -232,7 +232,7 @@ func (ti *tableImporter) getKVEncoder(chunk *checkpoints.ChunkCheckpoint) (kvEnc
 		Table:  ti.encTable,
 		Logger: log.Logger{Logger: ti.logger.With(zap.String("path", chunk.FileMeta.Path))},
 	}
-	return newTableKVEncoder(cfg, ti.ColumnAssignments, ti.ColumnsAndUserVars, ti.FieldMappings, ti.InsertColumns)
+	return NewTableKVEncoder(cfg, ti.ColumnAssignments, ti.ColumnsAndUserVars, ti.FieldMappings, ti.InsertColumns)
 }
 
 func (ti *tableImporter) importTable(ctx context.Context) error {
