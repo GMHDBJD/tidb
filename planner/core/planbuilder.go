@@ -4232,6 +4232,8 @@ func (b *PlanBuilder) buildLoadData(ctx context.Context, ld *ast.LoadDataStmt) (
 		ColumnAssignments:  ld.ColumnAssignments,
 		ColumnsAndUserVars: ld.ColumnsAndUserVars,
 		Options:            options,
+		// save the original sql text for load data statement.
+		Stmt: ld.Text(),
 	}.Init(b.ctx)
 	user := b.ctx.GetSessionVars().User
 	var insertErr, deleteErr error

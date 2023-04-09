@@ -20,6 +20,7 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/checkpoints"
+	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/disttask/framework/scheduler"
 	"github.com/pingcap/tidb/executor/importer"
@@ -42,11 +43,15 @@ func (e *ReadWriteSubtaskExecutor) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	dataWriter, err := e.task.Engine.LocalWriter(ctx, &backend.LocalWriterConfig{IsKVSorted: e.task.Table.IsRowOrdered})
+
+	hasAutoIncrementAutoID := common.TableHasAutoRowID(e.task.Table.Info) &&
+		e.task.Table.Info.AutoRandomBits == 0 && e.task.Table.Info.ShardRowIDBits == 0 &&
+		e.task.Table.Info.Partition == nil
+	dataWriter, err := e.task.DataEngine.LocalWriter(ctx, &backend.LocalWriterConfig{IsKVSorted: hasAutoIncrementAutoID})
 	if err != nil {
 		return err
 	}
-	indexWriter, err := e.task.Engine.LocalWriter(ctx, &backend.LocalWriterConfig{})
+	indexWriter, err := e.task.IndexEngine.LocalWriter(ctx, &backend.LocalWriterConfig{})
 	if err != nil {
 		return err
 	}

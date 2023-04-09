@@ -563,6 +563,8 @@ type LoadData struct {
 	Options            []*LoadDataOpt
 
 	GenCols InsertGeneratedColumns
+
+	Stmt string
 }
 
 // LoadDataOpt represents load data option.

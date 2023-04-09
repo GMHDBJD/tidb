@@ -18,11 +18,8 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
-	"github.com/pingcap/tidb/executor/importer"
-	"github.com/pingcap/tidb/parser/ast"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
-	"github.com/pingcap/tidb/table"
 )
 
 // TaskStep of LoadData.
@@ -38,19 +35,20 @@ type TaskMeta struct {
 	FileInfos   []FileInfo
 	Mode        Mode
 	SessionVars SessionVars
-	AstVars     AstVars
+	Stmt        string
 }
 
 // SubtaskMeta is the subtask of LoadData.
 // Dispatcher will split the task into subtasks(FileInfos -> Chunks)
 type SubtaskMeta struct {
+	ID          int32
 	Table       Table
 	Format      Format
 	Dir         string
 	Chunks      []Chunk
 	Mode        Mode
 	SessionVars SessionVars
-	AstVars     AstVars
+	Stmt        string
 }
 
 // MinimalTaskMeta is the minimal task of LoadData.
@@ -60,10 +58,11 @@ type MinimalTaskMeta struct {
 	Format      Format
 	Dir         string
 	Chunk       Chunk
-	Engine      *backend.OpenedEngine
 	Mode        Mode
 	SessionVars SessionVars
-	AstVars     AstVars
+	Stmt        string
+	DataEngine  *backend.OpenedEngine
+	IndexEngine *backend.OpenedEngine
 }
 
 // IsMinimalTask implements the MinimalTask interface.
@@ -75,6 +74,7 @@ type Table struct {
 	Info          *model.TableInfo
 	TargetColumns []string
 	IsRowOrdered  bool
+	RowIDBase     int64
 }
 
 // Format records the format information.
@@ -131,11 +131,4 @@ type Physical struct{}
 type SessionVars struct {
 	SQLMode mysql.SQLMode
 	SysVars map[string]string
-}
-
-type AstVars struct {
-	ColumnAssignments  []*ast.Assignment
-	ColumnsAndUserVars []*ast.ColumnNameOrUserVar
-	FieldMappings      []*importer.FieldMapping
-	InsertColumns      []*table.Column
 }

@@ -88,7 +88,7 @@ func (ep *engineProcessor) localSort(ctx context.Context, dataEngine *backend.Op
 	for _, chunk := range ep.chunks {
 		var (
 			parser                  mydump.Parser
-			encoder                 kvEncoder
+			encoder                 KvEncoder
 			dataWriter, indexWriter *backend.LocalEngineWriter
 		)
 		closer.reset()

@@ -184,7 +184,7 @@ type LoadDataController struct {
 	dataFiles        []*mydump.SourceFileMeta
 }
 
-func getImportantSysVars(sctx sessionctx.Context) map[string]string {
+func GetImportantSysVars(sctx sessionctx.Context) map[string]string {
 	res := map[string]string{}
 	for k, defVal := range common.DefaultImportantVariables {
 		if val, ok := sctx.GetSessionVars().GetSystemVar(k); ok {
@@ -243,7 +243,7 @@ func NewLoadDataController(userSctx sessionctx.Context, plan *plannercore.LoadDa
 		logger:           logger,
 		sqlMode:          userSctx.GetSessionVars().SQLMode,
 		charset:          charset,
-		importantSysVars: getImportantSysVars(userSctx),
+		importantSysVars: GetImportantSysVars(userSctx),
 	}
 	if err := c.initFieldParams(plan); err != nil {
 		return nil, err

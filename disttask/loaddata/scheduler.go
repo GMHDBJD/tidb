@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
-	"github.com/pingcap/tidb/br/pkg/lightning/config"
+	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/disttask/framework/scheduler"
 	"github.com/pingcap/tidb/util/logutil"
@@ -30,24 +30,24 @@ import (
 type ImportScheduler struct {
 	taskMeta         *TaskMeta
 	lightningBackend *backend.Backend
-	openedEngine     *backend.OpenedEngine
+	indexEngine      *backend.OpenedEngine
+	dataEngines      []*backend.OpenedEngine
 }
 
 // InitSubtaskExecEnv is used to initialize the environment for the subtask executor.
 func (s *ImportScheduler) InitSubtaskExecEnv(ctx context.Context) error {
 	logutil.BgLogger().Info("InitSubtaskExecEnv", zap.Any("taskMeta", s.taskMeta))
-	// create backend
 	backend, err := createLocalBackend(ctx, s.taskMeta)
 	if err != nil {
 		return err
 	}
 	s.lightningBackend = backend
 
-	engine, err := openEngine(ctx, s.taskMeta, backend)
+	indexEngine, err := openEngine(ctx, s.taskMeta.Table.Info.ID, s.taskMeta.Table.DBName, s.taskMeta.Table.Info.Name.String(), common.IndexEngineID, backend)
 	if err != nil {
 		return err
 	}
-	s.openedEngine = engine
+	s.indexEngine = indexEngine
 	return nil
 }
 
@@ -60,6 +60,12 @@ func (s *ImportScheduler) SplitSubtask(ctx context.Context, bs []byte) ([]proto.
 		return nil, err
 	}
 
+	dataEngine, err := openEngine(ctx, subtaskMeta.Table.Info.ID, subtaskMeta.Table.DBName, subtaskMeta.Table.Info.Name.String(), subtaskMeta.ID, s.lightningBackend)
+	if err != nil {
+		return nil, err
+	}
+	s.dataEngines = append(s.dataEngines, dataEngine)
+
 	miniTask := make([]proto.MinimalTask, 0, len(subtaskMeta.Chunks))
 	for _, chunk := range subtaskMeta.Chunks {
 		if err != nil {
@@ -70,10 +76,11 @@ func (s *ImportScheduler) SplitSubtask(ctx context.Context, bs []byte) ([]proto.
 			Format:      subtaskMeta.Format,
 			Dir:         subtaskMeta.Dir,
 			Chunk:       chunk,
-			Engine:      s.openedEngine,
 			Mode:        s.taskMeta.Mode,
 			SessionVars: s.taskMeta.SessionVars,
-			AstVars:     s.taskMeta.AstVars,
+			Stmt:        s.taskMeta.Stmt,
+			DataEngine:  dataEngine,
+			IndexEngine: s.indexEngine,
 		})
 	}
 	return miniTask, nil
@@ -82,14 +89,12 @@ func (s *ImportScheduler) SplitSubtask(ctx context.Context, bs []byte) ([]proto.
 // CleanupSubtaskExecEnv is used to clean up the environment for the subtask executor.
 func (s *ImportScheduler) CleanupSubtaskExecEnv(ctx context.Context) error {
 	logutil.BgLogger().Info("CleanupSubtaskExecEnv", zap.Any("taskMeta", s.taskMeta))
-	closedEngine, err := s.openedEngine.Close(ctx)
-	if err != nil {
-		return err
+	for _, engine := range s.dataEngines {
+		if err := importAndCleanupEngine(ctx, engine); err != nil {
+			return err
+		}
 	}
-	if err := closedEngine.Import(ctx, int64(config.SplitRegionSize), int64(config.SplitRegionKeys)); err != nil {
-		return err
-	}
-	if err := closedEngine.Cleanup(ctx); err != nil {
+	if err := importAndCleanupEngine(ctx, s.indexEngine); err != nil {
 		return err
 	}
 	s.lightningBackend.Close()

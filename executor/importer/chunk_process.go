@@ -110,7 +110,7 @@ func firstErr(errors ...error) error {
 
 func NewChunkProcessor(
 	parser mydump.Parser,
-	encoder kvEncoder,
+	encoder KvEncoder,
 	chunkInfo *checkpoints.ChunkCheckpoint,
 	logger *zap.Logger,
 	dataWriter *backend.LocalEngineWriter,
@@ -139,7 +139,7 @@ type chunkProcessor struct {
 	indexWriter *backend.LocalEngineWriter
 
 	checksum verify.KVChecksum
-	encoder  kvEncoder
+	encoder  KvEncoder
 	kvCodec  tikv.Codec
 }
 
