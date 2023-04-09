@@ -107,12 +107,14 @@ func newTableImporter(ctx context.Context, e *LoadDataController) (ti *tableImpo
 	}
 
 	backendConfig := local.BackendConfig{
-		PDAddr:                  tidbCfg.Path,
-		LocalStoreDir:           dir,
-		MaxConnPerStore:         config.DefaultRangeConcurrency,
-		ConnCompressType:        config.CompressionNone,
-		WorkerConcurrency:       config.DefaultRangeConcurrency * 2,
-		KVWriteBatchSize:        config.KVWriteBatchSize,
+		PDAddr:            tidbCfg.Path,
+		LocalStoreDir:     dir,
+		MaxConnPerStore:   config.DefaultRangeConcurrency,
+		ConnCompressType:  config.CompressionNone,
+		WorkerConcurrency: config.DefaultRangeConcurrency * 2,
+		KVWriteBatchSize:  config.KVWriteBatchSize,
+		// todo: local backend report error when the sort-dir already exists & checkpoint disabled.
+		// set to false when we fix it.
 		CheckpointEnabled:       true,
 		MemTableSize:            int(config.DefaultEngineMemCacheSize),
 		LocalWriterMemCacheSize: int64(config.DefaultLocalWriterMemCacheSize),
@@ -120,15 +122,17 @@ func newTableImporter(ctx context.Context, e *LoadDataController) (ti *tableImpo
 		DupeDetectEnabled:       false,
 		DuplicateDetectOpt:      local.DupDetectOpt{ReportErrOnDup: false},
 		StoreWriteBWLimit:       0,
-		ShouldCheckWriteStall:   false,
-		MaxOpenFiles:            int(util.GenRLimit()),
-		KeyspaceName:            keySpaceName,
+		// todo: we can set it false when we support switch import mode.
+		ShouldCheckWriteStall: true,
+		MaxOpenFiles:          int(util.GenRLimit()),
+		KeyspaceName:          keySpaceName,
 	}
 
 	tableMeta := &mydump.MDTableMeta{
 		DB:        e.DBName,
 		Name:      e.Table.Meta().Name.O,
 		DataFiles: e.toMyDumpFiles(),
+		// todo: set IsRowOrdered.
 	}
 	dataDivideCfg := &mydump.DataDivideConfig{
 		ColumnCnt:         len(e.Table.Meta().Columns),
@@ -220,7 +224,7 @@ func (ti *tableImporter) getParser(ctx context.Context, chunk *checkpoints.Chunk
 	return parser, nil
 }
 
-func (ti *tableImporter) getKVEncoder(chunk *checkpoints.ChunkCheckpoint) (KvEncoder, error) {
+func (ti *tableImporter) getKVEncoder(chunk *checkpoints.ChunkCheckpoint) (kvEncoder, error) {
 	cfg := &encode.EncodingConfig{
 		SessionOptions: encode.SessionOptions{
 			SQLMode:        ti.sqlMode,
@@ -232,7 +236,7 @@ func (ti *tableImporter) getKVEncoder(chunk *checkpoints.ChunkCheckpoint) (KvEnc
 		Table:  ti.encTable,
 		Logger: log.Logger{Logger: ti.logger.With(zap.String("path", chunk.FileMeta.Path))},
 	}
-	return NewTableKVEncoder(cfg, ti.ColumnAssignments, ti.ColumnsAndUserVars, ti.FieldMappings, ti.InsertColumns)
+	return newTableKVEncoder(cfg, ti.ColumnAssignments, ti.ColumnsAndUserVars, ti.FieldMappings, ti.InsertColumns)
 }
 
 func (ti *tableImporter) importTable(ctx context.Context) error {

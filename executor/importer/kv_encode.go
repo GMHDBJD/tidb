@@ -32,7 +32,7 @@ import (
 	"github.com/pingcap/tidb/types"
 )
 
-type KvEncoder interface {
+type kvEncoder interface {
 	Encode(row []types.Datum, rowID int64) (*kv.Pairs, error)
 	io.Closer
 }
@@ -47,9 +47,9 @@ type tableKVEncoder struct {
 	insertColumns      []*table.Column
 }
 
-var _ KvEncoder = &tableKVEncoder{}
+var _ kvEncoder = &tableKVEncoder{}
 
-func NewTableKVEncoder(
+func newTableKVEncoder(
 	config *encode.EncodingConfig,
 	columnAssignments []*ast.Assignment,
 	columnsAndUserVars []*ast.ColumnNameOrUserVar,

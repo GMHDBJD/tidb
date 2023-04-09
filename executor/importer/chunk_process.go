@@ -28,8 +28,6 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
 	verify "github.com/pingcap/tidb/br/pkg/lightning/verification"
-	"github.com/pingcap/tidb/keyspace"
-	tidbkv "github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/tikv/client-go/v2/tikv"
 	"go.uber.org/zap"
@@ -85,7 +83,7 @@ func (b *deliverKVBatch) size() uint64 {
 
 func (b *deliverKVBatch) add(kvs *kv.Pairs) {
 	for _, pair := range kvs.Pairs {
-		if pair.Key[tablecodec.TableSplitKeyLen+1] == 'r' {
+		if tablecodec.IsRecordKey(pair.Key) {
 			b.dataKVs.Pairs = append(b.dataKVs.Pairs, pair)
 			b.dataChecksum.UpdateOne(pair)
 		} else {
@@ -112,12 +110,12 @@ func firstErr(errors ...error) error {
 
 func NewChunkProcessor(
 	parser mydump.Parser,
-	encoder KvEncoder,
+	encoder kvEncoder,
 	chunkInfo *checkpoints.ChunkCheckpoint,
 	logger *zap.Logger,
 	dataWriter *backend.LocalEngineWriter,
 	indexWriter *backend.LocalEngineWriter,
-	kvStore tidbkv.Storage,
+	kvCodec tikv.Codec,
 ) *chunkProcessor {
 	return &chunkProcessor{
 		parser:      parser,
@@ -127,7 +125,7 @@ func NewChunkProcessor(
 		kvsCh:       make(chan []deliveredRow, maxKVQueueSize),
 		dataWriter:  dataWriter,
 		indexWriter: indexWriter,
-		kvStore:     kvStore,
+		kvCodec:     kvCodec,
 	}
 }
 
@@ -141,11 +139,12 @@ type chunkProcessor struct {
 	indexWriter *backend.LocalEngineWriter
 
 	checksum verify.KVChecksum
-	encoder  KvEncoder
-	kvStore  tidbkv.Storage
+	encoder  kvEncoder
+	kvCodec  tikv.Codec
 }
 
 func (p *chunkProcessor) Process(ctx context.Context) error {
+	// todo: use error group pattern to simplify the code
 	deliverCompleteCh := make(chan deliverResult)
 	go func() {
 		defer close(deliverCompleteCh)
@@ -256,11 +255,7 @@ func (p *chunkProcessor) encodeLoop(ctx context.Context, deliverCompleteCh <-cha
 }
 
 func (p *chunkProcessor) deliverLoop(ctx context.Context) error {
-	c := keyspace.CodecV1
-	if p.kvStore != nil {
-		c = p.kvStore.GetCodec()
-	}
-	kvBatch := newDeliverKVBatch(c)
+	kvBatch := newDeliverKVBatch(p.kvCodec)
 
 	for {
 	outer:

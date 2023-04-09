@@ -88,7 +88,7 @@ func (ep *engineProcessor) localSort(ctx context.Context, dataEngine *backend.Op
 	for _, chunk := range ep.chunks {
 		var (
 			parser                  mydump.Parser
-			encoder                 KvEncoder
+			encoder                 kvEncoder
 			dataWriter, indexWriter *backend.LocalEngineWriter
 		)
 		closer.reset()
@@ -127,7 +127,7 @@ func (ep *engineProcessor) localSort(ctx context.Context, dataEngine *backend.Op
 			ep.logger.With(zap.String("key", chunk.GetKey())),
 			dataWriter,
 			indexWriter,
-			ep.kvStore,
+			ep.kvStore.GetCodec(),
 		)
 		// todo: process in parallel
 		err = cp.Process(ctx)

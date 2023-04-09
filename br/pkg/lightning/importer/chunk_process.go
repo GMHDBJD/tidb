@@ -536,7 +536,7 @@ func (cr *chunkProcessor) deliverLoop(
 	return
 }
 
-func (cr *chunkProcessor) maybeSaveCheckpoint(
+func (*chunkProcessor) maybeSaveCheckpoint(
 	rc *Controller,
 	t *TableImporter,
 	engineID int32,
