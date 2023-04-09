@@ -120,20 +120,24 @@ type FileInfo struct {
 	RealSize int64
 }
 
+// Mode records the mode information.
 type Mode struct {
 	Type     string
 	Logical  Logical
 	Physical Physical
 }
 
+// Logical records the logical mode information.
 type Logical struct{}
 
+// Physical records the physical mode information.
 type Physical struct {
 	RowIDBase int64
 	Timestamp int64
 	Keyspace  []byte
 }
 
+// SessionVars records the session variables.
 type SessionVars struct {
 	SQLMode mysql.SQLMode
 	SysVars map[string]string

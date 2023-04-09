@@ -162,7 +162,7 @@ func importAndCleanupEngine(ctx context.Context, engine *backend.OpenedEngine) e
 	return closedEngine.Cleanup(ctx)
 }
 
-func buildEncoder(ctx context.Context, task MinimalTaskMeta) (importer.KvEncoder, error) {
+func buildEncoder(task MinimalTaskMeta) (importer.KvEncoder, error) {
 	idAlloc := kv.NewPanickingAllocators(task.Chunk.PrevRowIDMax)
 	tbl, err := tables.TableFromMeta(idAlloc, task.Table.Info)
 	if err != nil {
@@ -232,7 +232,7 @@ func buildParser(ctx context.Context, task MinimalTaskMeta) (mydump.Parser, erro
 		PrevRowIDMax: task.Chunk.PrevRowIDMax,
 	}
 
-	parser, err := mydump.BuildParser(ctx, cfg, fileMeta, chunk, nil, store, task.Table.Info)
+	parser, err := mydump.BuildParser(ctx, cfg, fileMeta, chunk, nil, store)
 	if err != nil {
 		return nil, err
 	}

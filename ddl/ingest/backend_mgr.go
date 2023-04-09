@@ -83,7 +83,7 @@ func CreateLocalBackend(ctx context.Context, cfg *Config) (backend.Backend, erro
 	}
 
 	logutil.BgLogger().Info("create local backend", zap.String("keyspaceName", cfg.KeyspaceName))
-	glueLit := glue.GlueLit{}
+	glueLit := glue.NoopGlue{}
 	db, err := glueLit.GetDB()
 	if err != nil {
 		return backend.Backend{}, err

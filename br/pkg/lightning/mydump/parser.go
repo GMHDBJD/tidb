@@ -31,7 +31,6 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/metric"
 	"github.com/pingcap/tidb/br/pkg/lightning/worker"
 	"github.com/pingcap/tidb/br/pkg/storage"
-	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/types"
 	"github.com/spkg/bom"
@@ -678,7 +677,6 @@ func BuildParser(
 	chunk Chunk,
 	ioWorkers *worker.Pool,
 	store storage.ExternalStorage,
-	tableInfo *model.TableInfo,
 ) (Parser, error) {
 	blockBufSize := int64(cfg.Mydumper.ReadBlockSize)
 

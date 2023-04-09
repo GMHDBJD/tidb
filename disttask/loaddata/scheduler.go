@@ -68,9 +68,6 @@ func (s *ImportScheduler) SplitSubtask(ctx context.Context, bs []byte) ([]proto.
 
 	miniTask := make([]proto.MinimalTask, 0, len(subtaskMeta.Chunks))
 	for _, chunk := range subtaskMeta.Chunks {
-		if err != nil {
-			return nil, err
-		}
 		miniTask = append(miniTask, MinimalTaskMeta{
 			JobID:       subtaskMeta.JobID,
 			Table:       subtaskMeta.Table,

@@ -24,7 +24,6 @@ go_library(
         "//br/pkg/lightning/worker",
         "//br/pkg/storage",
         "//config",
-        "//parser/model",
         "//parser/mysql",
         "//types",
         "//util/filter",

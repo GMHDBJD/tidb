@@ -57,7 +57,7 @@ func newChunkProcessor(
 	store storage.ExternalStorage,
 	tableInfo *checkpoints.TidbTableInfo,
 ) (*chunkProcessor, error) {
-	parser, err := mydump.BuildParser(ctx, cfg, chunk.FileMeta, chunk.Chunk, ioWorkers, store, tableInfo.Core)
+	parser, err := mydump.BuildParser(ctx, cfg, chunk.FileMeta, chunk.Chunk, ioWorkers, store)
 	if err != nil {
 		return nil, err
 	}

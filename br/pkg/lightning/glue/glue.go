@@ -208,46 +208,46 @@ func (e *ExternalTiDBGlue) Close() {
 func (*ExternalTiDBGlue) Record(string, uint64) {
 }
 
-// GlueLit is used as a placeholder for the local backend initialization.
-type GlueLit struct{}
+// NoopGlue is used as a placeholder for the local backend initialization.
+type NoopGlue struct{}
 
 // OwnsSQLExecutor Implement interface OwnsSQLExecutor.
-func (GlueLit) OwnsSQLExecutor() bool {
+func (NoopGlue) OwnsSQLExecutor() bool {
 	return false
 }
 
 // GetSQLExecutor Implement interface GetSQLExecutor.
-func (GlueLit) GetSQLExecutor() SQLExecutor {
+func (NoopGlue) GetSQLExecutor() SQLExecutor {
 	return nil
 }
 
 // GetDB Implement interface GetDB.
-func (GlueLit) GetDB() (*sql.DB, error) {
+func (NoopGlue) GetDB() (*sql.DB, error) {
 	return nil, nil
 }
 
 // GetParser Implement interface GetParser.
-func (GlueLit) GetParser() *parser.Parser {
+func (NoopGlue) GetParser() *parser.Parser {
 	return nil
 }
 
 // GetTables Implement interface GetTables.
-func (GlueLit) GetTables(context.Context, string) ([]*model.TableInfo, error) {
+func (NoopGlue) GetTables(context.Context, string) ([]*model.TableInfo, error) {
 	return nil, nil
 }
 
 // GetSession Implement interface GetSession.
-func (GlueLit) GetSession(context.Context) (checkpoints.Session, error) {
+func (NoopGlue) GetSession(context.Context) (checkpoints.Session, error) {
 	return nil, nil
 }
 
 // OpenCheckpointsDB Implement interface OpenCheckpointsDB.
-func (GlueLit) OpenCheckpointsDB(context.Context, *config.Config) (checkpoints.DB, error) {
+func (NoopGlue) OpenCheckpointsDB(context.Context, *config.Config) (checkpoints.DB, error) {
 	return nil, nil
 }
 
 // Record is used to report some information (key, value) to host TiDB, including progress, stage currently.
-func (GlueLit) Record(string, uint64) {
+func (NoopGlue) Record(string, uint64) {
 }
 
 // record key names

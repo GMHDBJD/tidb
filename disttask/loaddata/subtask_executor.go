@@ -33,13 +33,14 @@ type ImportSubtaskExecutor struct {
 	task MinimalTaskMeta
 }
 
+// Run implements the SubtaskExecutor.Run interface.
 func (e *ImportSubtaskExecutor) Run(ctx context.Context) error {
 	logutil.BgLogger().Info("subtask executor run", zap.Any("task", e.task))
 	parser, err := buildParser(ctx, e.task)
 	if err != nil {
 		return err
 	}
-	encoder, err := buildEncoder(ctx, e.task)
+	encoder, err := buildEncoder(e.task)
 	if err != nil {
 		return err
 	}
