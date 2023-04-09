@@ -24,6 +24,7 @@ import (
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/disttask/framework/scheduler"
 	"github.com/pingcap/tidb/executor/importer"
+	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/util/logutil"
 	"go.uber.org/zap"
 )
@@ -68,7 +69,7 @@ func (e *ReadWriteSubtaskExecutor) Run(ctx context.Context) error {
 		logutil.BgLogger(),
 		dataWriter,
 		indexWriter,
-		nil,
+		keyspace.CodecV1.GetKeyspace(),
 	)
 	err = cp.Process(ctx)
 	if err != nil {

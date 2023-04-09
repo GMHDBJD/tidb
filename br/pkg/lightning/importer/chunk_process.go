@@ -375,8 +375,8 @@ func (cr *chunkProcessor) deliverLoop(
 			c = t.kvStore.GetCodec()
 		}
 		var (
-			dataChecksum  = verify.NewKVChecksumWithKeyspace(c)
-			indexChecksum = verify.NewKVChecksumWithKeyspace(c)
+			dataChecksum  = verify.NewKVChecksumWithCodec(c)
+			indexChecksum = verify.NewKVChecksumWithCodec(c)
 		)
 		var columns []string
 		var kvPacket []deliveredKVs

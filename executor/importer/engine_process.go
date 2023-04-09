@@ -127,7 +127,7 @@ func (ep *engineProcessor) localSort(ctx context.Context, dataEngine *backend.Op
 			ep.logger.With(zap.String("key", chunk.GetKey())),
 			dataWriter,
 			indexWriter,
-			ep.kvStore.GetCodec(),
+			ep.kvStore.GetCodec().GetKeyspace(),
 		)
 		// todo: process in parallel
 		err = cp.Process(ctx)

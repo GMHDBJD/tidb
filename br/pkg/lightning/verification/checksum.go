@@ -41,9 +41,14 @@ func NewKVChecksum(checksum uint64) *KVChecksum {
 	}
 }
 
-// NewKVChecksumWithKeyspace creates a new KVChecksum with the given checksum and keyspace.
-func NewKVChecksumWithKeyspace(k tikv.Codec) *KVChecksum {
+// NewKVChecksumWithCodec creates a new KVChecksum with the given checksum and keyspace.
+func NewKVChecksumWithCodec(k tikv.Codec) *KVChecksum {
 	ks := k.GetKeyspace()
+	return NewKVChecksumWithKeyspace(ks)
+}
+
+// NewKVChecksumWithKeyspace creates a new KVChecksum with the given checksum and keyspace.
+func NewKVChecksumWithKeyspace(ks []byte) *KVChecksum {
 	return &KVChecksum{
 		base:      crc64.Update(0, ecmaTable, ks),
 		prefixLen: len(ks),

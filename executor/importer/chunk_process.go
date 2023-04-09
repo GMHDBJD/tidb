@@ -29,7 +29,6 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
 	verify "github.com/pingcap/tidb/br/pkg/lightning/verification"
 	"github.com/pingcap/tidb/tablecodec"
-	"github.com/tikv/client-go/v2/tikv"
 	"go.uber.org/zap"
 )
 
@@ -59,22 +58,21 @@ type deliverKVBatch struct {
 	dataChecksum  *verify.KVChecksum
 	indexChecksum *verify.KVChecksum
 
-	codec tikv.Codec
+	keyspace []byte
 }
 
-func newDeliverKVBatch(codec tikv.Codec) *deliverKVBatch {
+func newDeliverKVBatch(keyspace []byte) *deliverKVBatch {
 	return &deliverKVBatch{
-		dataChecksum:  verify.NewKVChecksumWithKeyspace(codec),
-		indexChecksum: verify.NewKVChecksumWithKeyspace(codec),
-		codec:         codec,
+		dataChecksum:  verify.NewKVChecksumWithKeyspace(keyspace),
+		indexChecksum: verify.NewKVChecksumWithKeyspace(keyspace),
 	}
 }
 
 func (b *deliverKVBatch) reset() {
 	b.dataKVs.Clear()
 	b.indexKVs.Clear()
-	b.dataChecksum = verify.NewKVChecksumWithKeyspace(b.codec)
-	b.indexChecksum = verify.NewKVChecksumWithKeyspace(b.codec)
+	b.dataChecksum = verify.NewKVChecksumWithKeyspace(b.keyspace)
+	b.indexChecksum = verify.NewKVChecksumWithKeyspace(b.keyspace)
 }
 
 func (b *deliverKVBatch) size() uint64 {
@@ -115,7 +113,7 @@ func NewChunkProcessor(
 	logger *zap.Logger,
 	dataWriter *backend.LocalEngineWriter,
 	indexWriter *backend.LocalEngineWriter,
-	kvCodec tikv.Codec,
+	keyspace []byte,
 ) *chunkProcessor {
 	return &chunkProcessor{
 		parser:      parser,
@@ -125,7 +123,7 @@ func NewChunkProcessor(
 		kvsCh:       make(chan []deliveredRow, maxKVQueueSize),
 		dataWriter:  dataWriter,
 		indexWriter: indexWriter,
-		kvCodec:     kvCodec,
+		keyspace:    keyspace,
 	}
 }
 
@@ -140,7 +138,7 @@ type chunkProcessor struct {
 
 	checksum verify.KVChecksum
 	encoder  KvEncoder
-	kvCodec  tikv.Codec
+	keyspace []byte
 }
 
 func (p *chunkProcessor) Process(ctx context.Context) error {
@@ -255,7 +253,7 @@ func (p *chunkProcessor) encodeLoop(ctx context.Context, deliverCompleteCh <-cha
 }
 
 func (p *chunkProcessor) deliverLoop(ctx context.Context) error {
-	kvBatch := newDeliverKVBatch(p.kvCodec)
+	kvBatch := newDeliverKVBatch(p.keyspace)
 
 	for {
 	outer:
