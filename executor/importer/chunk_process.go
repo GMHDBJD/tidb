@@ -106,6 +106,7 @@ func firstErr(errors ...error) error {
 	return nil
 }
 
+// NewChunkProcessor creates a new chunk processor.
 func NewChunkProcessor(
 	parser mydump.Parser,
 	encoder KvEncoder,

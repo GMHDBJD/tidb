@@ -184,6 +184,7 @@ type LoadDataController struct {
 	dataFiles        []*mydump.SourceFileMeta
 }
 
+// GetImportantSysVars gets important system variables.
 func GetImportantSysVars(sctx sessionctx.Context) map[string]string {
 	res := map[string]string{}
 	for k, defVal := range common.DefaultImportantVariables {

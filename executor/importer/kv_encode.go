@@ -32,6 +32,7 @@ import (
 	"github.com/pingcap/tidb/types"
 )
 
+// KvEncoder is the interface for encoding a row of data into a KV pair.
 type KvEncoder interface {
 	Encode(row []types.Datum, rowID int64) (*kv.Pairs, error)
 	io.Closer
@@ -49,6 +50,7 @@ type tableKVEncoder struct {
 
 var _ KvEncoder = &tableKVEncoder{}
 
+// NewTableKVEncoder creates a new tableKVEncoder.
 func NewTableKVEncoder(
 	config *encode.EncodingConfig,
 	columnAssignments []*ast.Assignment,
