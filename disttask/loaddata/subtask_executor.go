@@ -24,17 +24,16 @@ import (
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/disttask/framework/scheduler"
 	"github.com/pingcap/tidb/executor/importer"
-	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/util/logutil"
 	"go.uber.org/zap"
 )
 
-// ReadWriteSubtaskExecutor is an example subtask executor.
-type ReadWriteSubtaskExecutor struct {
+// ImportSubtaskExecutor is a subtask executor for load data.
+type ImportSubtaskExecutor struct {
 	task MinimalTaskMeta
 }
 
-func (e *ReadWriteSubtaskExecutor) Run(ctx context.Context) error {
+func (e *ImportSubtaskExecutor) Run(ctx context.Context) error {
 	logutil.BgLogger().Info("subtask executor run", zap.Any("task", e.task))
 	parser, err := buildParser(ctx, e.task)
 	if err != nil {
@@ -69,7 +68,7 @@ func (e *ReadWriteSubtaskExecutor) Run(ctx context.Context) error {
 		logutil.BgLogger(),
 		dataWriter,
 		indexWriter,
-		keyspace.CodecV1.GetKeyspace(),
+		e.task.Mode.Physical.Keyspace,
 	)
 	err = cp.Process(ctx)
 	if err != nil {
@@ -88,7 +87,7 @@ func init() {
 			if !ok {
 				return nil, errors.Errorf("invalid task type %T", minimalTask)
 			}
-			return &ReadWriteSubtaskExecutor{task: task}, nil
+			return &ImportSubtaskExecutor{task: task}, nil
 		},
 	)
 }

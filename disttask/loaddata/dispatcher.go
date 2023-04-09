@@ -76,13 +76,14 @@ func generateSubtaskMetas(ctx context.Context, task *TaskMeta, concurrency int) 
 	if err != nil {
 		return nil, err
 	}
-	rebaseRowID(task.Table.RowIDBase, tableRegions)
+	rebaseRowID(task.Mode.Physical.RowIDBase, tableRegions)
 
 	subtaskMetaMap := make(map[int32]*SubtaskMeta)
 	for _, region := range tableRegions {
 		subtaskMeta, ok := subtaskMetaMap[region.EngineID]
 		if !ok {
 			subtaskMeta = &SubtaskMeta{
+				JobID:       task.JobID,
 				ID:          region.EngineID,
 				Table:       task.Table,
 				Format:      task.Format,

@@ -29,6 +29,7 @@ const (
 
 // TaskMeta is the task of LoadData.
 type TaskMeta struct {
+	JobID       int64
 	Table       Table
 	Format      Format
 	Dir         string
@@ -41,6 +42,7 @@ type TaskMeta struct {
 // SubtaskMeta is the subtask of LoadData.
 // Dispatcher will split the task into subtasks(FileInfos -> Chunks)
 type SubtaskMeta struct {
+	JobID       int64
 	ID          int32
 	Table       Table
 	Format      Format
@@ -54,6 +56,7 @@ type SubtaskMeta struct {
 // MinimalTaskMeta is the minimal task of LoadData.
 // Scheduler will split the subtask into minimal tasks(Chunks -> Chunk)
 type MinimalTaskMeta struct {
+	JobID       int64
 	Table       Table
 	Format      Format
 	Dir         string
@@ -74,7 +77,6 @@ type Table struct {
 	Info          *model.TableInfo
 	TargetColumns []string
 	IsRowOrdered  bool
-	RowIDBase     int64
 }
 
 // Format records the format information.
@@ -126,7 +128,11 @@ type Mode struct {
 
 type Logical struct{}
 
-type Physical struct{}
+type Physical struct {
+	RowIDBase int64
+	Timestamp int64
+	Keyspace  []byte
+}
 
 type SessionVars struct {
 	SQLMode mysql.SQLMode

@@ -252,10 +252,15 @@ func NewLoadDataController(userSctx sessionctx.Context, plan *plannercore.LoadDa
 		return nil, err
 	}
 
-	columnNames := c.initFieldMappings()
-	if err := c.initLoadColumns(columnNames); err != nil {
+	fieldMapping, columnNames := GenerateFieldMappings(c.ColumnsAndUserVars, c.ColumnAssignments, c.Table)
+	c.FieldMappings = fieldMapping
+
+	insertColumns, err := GenerateInsertColumns(columnNames, c.ColumnAssignments, c.Table)
+	if err != nil {
 		return nil, err
 	}
+
+	c.InsertColumns = insertColumns
 	return c, nil
 }
 
@@ -491,28 +496,29 @@ func (e *LoadDataController) adjustOptions() {
 	}
 }
 
-// initFieldMappings make a field mapping slice to implicitly map input field to table column or user defined variable
+// GenerateFieldMappings generate make a field mapping slice to implicitly map input field to table column or user defined variable
 // the slice's order is the same as the order of the input fields.
 // Returns a slice of same ordered column names without user defined variable names.
-func (e *LoadDataController) initFieldMappings() []string {
-	columns := make([]string, 0, len(e.ColumnsAndUserVars)+len(e.ColumnAssignments))
-	tableCols := e.Table.VisibleCols()
+func GenerateFieldMappings(columnsAndUserVars []*ast.ColumnNameOrUserVar, columnAssignments []*ast.Assignment, tbl table.Table) ([]*FieldMapping, []string) {
+	fieldMappings := make([]*FieldMapping, 0, len(columnsAndUserVars))
+	columns := make([]string, 0, len(columnsAndUserVars)+len(columnAssignments))
+	tableCols := tbl.VisibleCols()
 
-	if len(e.ColumnsAndUserVars) == 0 {
+	if len(columnsAndUserVars) == 0 {
 		for _, v := range tableCols {
 			fieldMapping := &FieldMapping{
 				Column: v,
 			}
-			e.FieldMappings = append(e.FieldMappings, fieldMapping)
+			fieldMappings = append(fieldMappings, fieldMapping)
 			columns = append(columns, v.Name.O)
 		}
 
-		return columns
+		return fieldMappings, columns
 	}
 
 	var column *table.Column
 
-	for _, v := range e.ColumnsAndUserVars {
+	for _, v := range columnsAndUserVars {
 		if v.ColumnName != nil {
 			column = table.FindCol(tableCols, v.ColumnName.Name.O)
 			columns = append(columns, v.ColumnName.Name.O)
@@ -524,65 +530,65 @@ func (e *LoadDataController) initFieldMappings() []string {
 			Column:  column,
 			UserVar: v.UserVar,
 		}
-		e.FieldMappings = append(e.FieldMappings, fieldMapping)
+		fieldMappings = append(fieldMappings, fieldMapping)
 	}
 
-	return columns
+	return fieldMappings, columns
 }
 
-// initLoadColumns sets columns which the input fields loaded to.
-func (e *LoadDataController) initLoadColumns(columnNames []string) error {
+// GenerateInsertColumns creates columns which the input fields loaded to.
+func GenerateInsertColumns(columnNames []string, columnAssignments []*ast.Assignment, tbl table.Table) ([]*table.Column, error) {
 	var cols []*table.Column
 	var missingColName string
 	var err error
-	tableCols := e.Table.VisibleCols()
+	var insertColumns []*table.Column
+	tableCols := tbl.VisibleCols()
 
 	if len(columnNames) != len(tableCols) {
-		for _, v := range e.ColumnAssignments {
+		for _, v := range columnAssignments {
 			columnNames = append(columnNames, v.Column.Name.O)
 		}
 	}
 
-	cols, missingColName = table.FindCols(tableCols, columnNames, e.Table.Meta().PKIsHandle)
+	cols, missingColName = table.FindCols(tableCols, columnNames, tbl.Meta().PKIsHandle)
 	if missingColName != "" {
-		return dbterror.ErrBadField.GenWithStackByArgs(missingColName, "field list")
+		return nil, dbterror.ErrBadField.GenWithStackByArgs(missingColName, "field list")
 	}
 
 	for _, col := range cols {
 		if !col.IsGenerated() {
 			// todo: should report error here, since in reorderColumns we report error if en(cols) != len(columnNames)
-			e.InsertColumns = append(e.InsertColumns, col)
+			insertColumns = append(insertColumns, col)
 		}
 	}
 
 	// e.InsertColumns is appended according to the original tables' column sequence.
 	// We have to reorder it to follow the use-specified column order which is shown in the columnNames.
-	if err = e.reorderColumns(columnNames); err != nil {
-		return err
+	insertColumns, err = reorderColumns(columnNames, insertColumns)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check column whether is specified only once.
 	err = table.CheckOnce(cols)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return insertColumns, nil
 }
 
 // reorderColumns reorder the e.InsertColumns according to the order of columnNames
 // Note: We must ensure there must be one-to-one mapping between e.InsertColumns and columnNames in terms of column name.
-func (e *LoadDataController) reorderColumns(columnNames []string) error {
-	cols := e.InsertColumns
-
+func reorderColumns(columnNames []string, cols []*table.Column) ([]*table.Column, error) {
 	if len(cols) != len(columnNames) {
-		return exeerrors.ErrColumnsNotMatched
+		return nil, exeerrors.ErrColumnsNotMatched
 	}
 
 	reorderedColumns := make([]*table.Column, len(cols))
 
 	if columnNames == nil {
-		return nil
+		return cols, nil
 	}
 
 	mapping := make(map[string]int)
@@ -595,9 +601,7 @@ func (e *LoadDataController) reorderColumns(columnNames []string) error {
 		reorderedColumns[idx] = col
 	}
 
-	e.InsertColumns = reorderedColumns
-
-	return nil
+	return reorderedColumns, nil
 }
 
 // GetFieldCount get field count.

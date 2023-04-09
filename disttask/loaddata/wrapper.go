@@ -17,7 +17,6 @@ package loaddata
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
@@ -31,18 +30,13 @@ import (
 	"github.com/pingcap/tidb/executor/importer"
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/parser/ast"
-	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/table/tables"
 	"github.com/pingcap/tidb/util/intest"
 	"github.com/pingcap/tidb/util/logutil"
 )
 
-func makeTableRegions(ctx context.Context, task *TaskMeta, concurrency int) ([]*mydump.TableRegion, error) {
-	if concurrency <= 0 {
-		return nil, errors.Errorf("concurrency must be greater than 0, but got %d", concurrency)
-	}
-
-	b, err := storage.ParseBackend(task.Dir, nil)
+func getStore(ctx context.Context, dir string) (storage.ExternalStorage, error) {
+	b, err := storage.ParseBackend(dir, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +45,15 @@ func makeTableRegions(ctx context.Context, task *TaskMeta, concurrency int) ([]*
 	if intest.InTest {
 		opt.NoCredentials = true
 	}
-	store, err := storage.New(ctx, b, opt)
+	return storage.New(ctx, b, opt)
+}
+
+func makeTableRegions(ctx context.Context, task *TaskMeta, concurrency int) ([]*mydump.TableRegion, error) {
+	if concurrency <= 0 {
+		return nil, errors.Errorf("concurrency must be greater than 0, but got %d", concurrency)
+	}
+
+	store, err := getStore(ctx, task.Dir)
 	if err != nil {
 		return nil, err
 	}
@@ -119,12 +121,14 @@ func transformSourceType(tp string) (mydump.SourceType, error) {
 	}
 }
 
-func lightningSortedKVDir(tableID int64) string {
-	return fmt.Sprintf("import_%d", tableID)
+func lightningSortedKVDir(jobID int64) string {
+	return fmt.Sprintf("import_%d", jobID)
 }
 
+// TODO: merge the same logic in ingest and table_importer
+// TODO: add MemRoot and DiskQuota
 func createLocalBackend(ctx context.Context, taskMeta *TaskMeta) (*backend.Backend, error) {
-	sortedKVDir := lightningSortedKVDir(taskMeta.Table.Info.ID)
+	sortedKVDir := lightningSortedKVDir(taskMeta.JobID)
 	backendCfg, err := ingest.GenConfig(ingest.WithSortedKVDir(sortedKVDir))
 	if err != nil {
 		return nil, err
@@ -137,8 +141,9 @@ func createLocalBackend(ctx context.Context, taskMeta *TaskMeta) (*backend.Backe
 	return &backend, nil
 }
 
-func openEngine(ctx context.Context, tableID int64, dbName string, tableName string, engineID int32, backend *backend.Backend) (*backend.OpenedEngine, error) {
-	cfg := ingest.GenerateLocalEngineConfig(tableID, dbName, tableName)
+func openEngine(ctx context.Context, taskMeta *TaskMeta, engineID int32, backend *backend.Backend) (*backend.OpenedEngine, error) {
+	tableName := taskMeta.Table.Info.Name.String()
+	cfg := ingest.GenerateLocalEngineConfig(taskMeta.JobID, taskMeta.Table.DBName, tableName)
 	engine, err := backend.OpenEngine(ctx, cfg, tableName, engineID)
 	if err != nil {
 		return nil, err
@@ -157,101 +162,6 @@ func importAndCleanupEngine(ctx context.Context, engine *backend.OpenedEngine) e
 	return closedEngine.Cleanup(ctx)
 }
 
-func getStore(ctx context.Context, dir string) (storage.ExternalStorage, error) {
-	b, err := storage.ParseBackend(dir, nil)
-	if err != nil {
-		return nil, err
-	}
-	opt := &storage.ExternalStorageOptions{
-		NoCredentials: true,
-	}
-	return storage.New(ctx, b, opt)
-}
-
-func generateFieldMappings(stmt *ast.LoadDataStmt, tbl table.Table) ([]*importer.FieldMapping, []string) {
-	columns := make([]string, 0, len(stmt.ColumnsAndUserVars)+len(stmt.ColumnAssignments))
-	tableCols := tbl.VisibleCols()
-	fieldMappings := make([]*importer.FieldMapping, 0, len(stmt.ColumnsAndUserVars)+len(stmt.ColumnAssignments))
-
-	if len(stmt.ColumnsAndUserVars) == 0 {
-		for _, v := range tableCols {
-			fieldMapping := &importer.FieldMapping{
-				Column: v,
-			}
-			fieldMappings = append(fieldMappings, fieldMapping)
-			columns = append(columns, v.Name.O)
-		}
-
-		return fieldMappings, columns
-	}
-
-	var column *table.Column
-
-	for _, v := range stmt.ColumnsAndUserVars {
-		if v.ColumnName != nil {
-			column = table.FindCol(tableCols, v.ColumnName.Name.O)
-			columns = append(columns, v.ColumnName.Name.O)
-		} else {
-			column = nil
-		}
-
-		fieldMapping := &importer.FieldMapping{
-			Column:  column,
-			UserVar: v.UserVar,
-		}
-		fieldMappings = append(fieldMappings, fieldMapping)
-	}
-
-	return fieldMappings, columns
-}
-
-func generateLoadColumns(columnNames []string, stmt *ast.LoadDataStmt, tbl table.Table) []*table.Column {
-	var cols []*table.Column
-	var insertColumns []*table.Column
-	var missingColName string
-	tableCols := tbl.VisibleCols()
-
-	if len(columnNames) != len(tableCols) {
-		for _, v := range stmt.ColumnAssignments {
-			columnNames = append(columnNames, v.Column.Name.O)
-		}
-	}
-
-	cols, missingColName = table.FindCols(tableCols, columnNames, tbl.Meta().PKIsHandle)
-	if missingColName != "" {
-		return nil
-	}
-
-	for _, col := range cols {
-		if !col.IsGenerated() {
-			// todo: should report error here, since in reorderColumns we report error if en(cols) != len(columnNames)
-			insertColumns = append(insertColumns, col)
-		}
-	}
-
-	if len(cols) != len(columnNames) {
-		return nil
-	}
-
-	reorderedColumns := make([]*table.Column, len(cols))
-
-	if columnNames == nil {
-		return nil
-	}
-
-	mapping := make(map[string]int)
-	for idx, colName := range columnNames {
-		mapping[strings.ToLower(colName)] = idx
-	}
-
-	for _, col := range cols {
-		idx := mapping[col.Name.L]
-		reorderedColumns[idx] = col
-	}
-
-	return reorderedColumns
-}
-
 func buildEncoder(ctx context.Context, task MinimalTaskMeta) (importer.KvEncoder, error) {
 	idAlloc := kv.NewPanickingAllocators(task.Chunk.PrevRowIDMax)
 	tbl, err := tables.TableFromMeta(idAlloc, task.Table.Info)
@@ -261,7 +171,7 @@ func buildEncoder(ctx context.Context, task MinimalTaskMeta) (importer.KvEncoder
 	cfg := &encode.EncodingConfig{
 		SessionOptions: encode.SessionOptions{
 			SQLMode:        task.SessionVars.SQLMode,
-			Timestamp:      0,
+			Timestamp:      task.Mode.Physical.Timestamp,
 			SysVars:        task.SessionVars.SysVars,
 			AutoRandomSeed: task.Chunk.PrevRowIDMax,
 		},
@@ -279,11 +189,16 @@ func buildEncoder(ctx context.Context, task MinimalTaskMeta) (importer.KvEncoder
 	if !ok {
 		return nil, errors.Errorf("stmt %s is not load data stmt", task.Stmt)
 	}
-	fieldMappings, columns := generateFieldMappings(loadDataStmt, tbl)
-	insertColumns := generateLoadColumns(columns, loadDataStmt, tbl)
+
+	fieldMappings, columns := importer.GenerateFieldMappings(loadDataStmt.ColumnsAndUserVars, loadDataStmt.ColumnAssignments, tbl)
+	insertColumns, err := importer.GenerateInsertColumns(columns, loadDataStmt.ColumnAssignments, tbl)
+	if err != nil {
+		return nil, err
+	}
 	return importer.NewTableKVEncoder(cfg, loadDataStmt.ColumnAssignments, loadDataStmt.ColumnsAndUserVars, fieldMappings, insertColumns)
 }
 
+// TODO: merge the same logic in table_importer, load data and lightning.
 func buildParser(ctx context.Context, task MinimalTaskMeta) (mydump.Parser, error) {
 	store, err := getStore(ctx, task.Dir)
 	if err != nil {

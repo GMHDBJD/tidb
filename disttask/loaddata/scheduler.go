@@ -43,7 +43,7 @@ func (s *ImportScheduler) InitSubtaskExecEnv(ctx context.Context) error {
 	}
 	s.lightningBackend = backend
 
-	indexEngine, err := openEngine(ctx, s.taskMeta.Table.Info.ID, s.taskMeta.Table.DBName, s.taskMeta.Table.Info.Name.String(), common.IndexEngineID, backend)
+	indexEngine, err := openEngine(ctx, s.taskMeta, common.IndexEngineID, backend)
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func (s *ImportScheduler) SplitSubtask(ctx context.Context, bs []byte) ([]proto.
 		return nil, err
 	}
 
-	dataEngine, err := openEngine(ctx, subtaskMeta.Table.Info.ID, subtaskMeta.Table.DBName, subtaskMeta.Table.Info.Name.String(), subtaskMeta.ID, s.lightningBackend)
+	dataEngine, err := openEngine(ctx, s.taskMeta, subtaskMeta.ID, s.lightningBackend)
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +72,7 @@ func (s *ImportScheduler) SplitSubtask(ctx context.Context, bs []byte) ([]proto.
 			return nil, err
 		}
 		miniTask = append(miniTask, MinimalTaskMeta{
+			JobID:       subtaskMeta.JobID,
 			Table:       subtaskMeta.Table,
 			Format:      subtaskMeta.Format,
 			Dir:         subtaskMeta.Dir,
@@ -89,6 +90,8 @@ func (s *ImportScheduler) SplitSubtask(ctx context.Context, bs []byte) ([]proto.
 // CleanupSubtaskExecEnv is used to clean up the environment for the subtask executor.
 func (s *ImportScheduler) CleanupSubtaskExecEnv(ctx context.Context) error {
 	logutil.BgLogger().Info("CleanupSubtaskExecEnv", zap.Any("taskMeta", s.taskMeta))
+	// TODO: add OnSubtaskFinish callback in scheduler framework.
+	// If subtask failed, we should not import data.
 	for _, engine := range s.dataEngines {
 		if err := importAndCleanupEngine(ctx, engine); err != nil {
 			return err
@@ -102,6 +105,7 @@ func (s *ImportScheduler) CleanupSubtaskExecEnv(ctx context.Context) error {
 }
 
 // Rollback is used to rollback all subtasks.
+// TODO: add rollback
 func (s *ImportScheduler) Rollback(context.Context) error {
 	logutil.BgLogger().Info("rollback", zap.Any("taskMeta", s.taskMeta))
 	return nil
