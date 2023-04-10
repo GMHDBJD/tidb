@@ -121,85 +121,8 @@ func transformSourceType(tp string) (mydump.SourceType, error) {
 	}
 }
 
-func lightningSortedKVDir(jobID int64) string {
-	return fmt.Sprintf("import_%d", jobID)
-}
-
-// TODO: merge the same logic in ingest and table_importer
-// TODO: add MemRoot and DiskQuota
-func createLocalBackend(ctx context.Context, taskMeta *TaskMeta) (*backend.Backend, error) {
-	sortedKVDir := lightningSortedKVDir(taskMeta.JobID)
-	backendCfg, err := ingest.GenConfig(ingest.WithSortedKVDir(sortedKVDir))
-	if err != nil {
-		return nil, err
-	}
-
-	backend, err := ingest.CreateLocalBackend(ctx, backendCfg)
-	if err != nil {
-		return nil, err
-	}
-	return &backend, nil
-}
-
-func openEngine(ctx context.Context, taskMeta *TaskMeta, engineID int32, backend *backend.Backend) (*backend.OpenedEngine, error) {
-	tableName := taskMeta.Table.Info.Name.String()
-	cfg := ingest.GenerateLocalEngineConfig(taskMeta.JobID, taskMeta.Table.DBName, tableName)
-	engine, err := backend.OpenEngine(ctx, cfg, tableName, engineID)
-	if err != nil {
-		return nil, err
-	}
-	return engine, nil
-}
-
-func importAndCleanupEngine(ctx context.Context, engine *backend.OpenedEngine) error {
-	closedEngine, err := engine.Close(ctx)
-	if err != nil {
-		return err
-	}
-	if err := closedEngine.Import(ctx, int64(config.SplitRegionSize), int64(config.SplitRegionKeys)); err != nil {
-		return err
-	}
-	return closedEngine.Cleanup(ctx)
-}
-
-func buildEncoder(task MinimalTaskMeta) (importer.KvEncoder, error) {
-	idAlloc := kv.NewPanickingAllocators(task.Chunk.PrevRowIDMax)
-	tbl, err := tables.TableFromMeta(idAlloc, task.Table.Info)
-	if err != nil {
-		return nil, err
-	}
-	cfg := &encode.EncodingConfig{
-		SessionOptions: encode.SessionOptions{
-			SQLMode:        task.SessionVars.SQLMode,
-			Timestamp:      task.Mode.Physical.Timestamp,
-			SysVars:        task.SessionVars.SysVars,
-			AutoRandomSeed: task.Chunk.PrevRowIDMax,
-		},
-		Path:   task.Chunk.Path,
-		Table:  tbl,
-		Logger: log.Logger{Logger: logutil.BgLogger()},
-	}
-
-	// parse stmt to load data stmt
-	stmt, err := parser.New().ParseOneStmt(task.Stmt, "", "")
-	if err != nil {
-		return nil, err
-	}
-	loadDataStmt, ok := stmt.(*ast.LoadDataStmt)
-	if !ok {
-		return nil, errors.Errorf("stmt %s is not load data stmt", task.Stmt)
-	}
-
-	fieldMappings, columns := importer.GenerateFieldMappings(loadDataStmt.ColumnsAndUserVars, loadDataStmt.ColumnAssignments, tbl)
-	insertColumns, err := importer.GenerateInsertColumns(columns, loadDataStmt.ColumnAssignments, tbl)
-	if err != nil {
-		return nil, err
-	}
-	return importer.NewTableKVEncoder(cfg, loadDataStmt.ColumnAssignments, loadDataStmt.ColumnsAndUserVars, fieldMappings, insertColumns)
-}
-
 // TODO: merge the same logic in table_importer, load data and lightning.
-func buildParser(ctx context.Context, task MinimalTaskMeta) (mydump.Parser, error) {
+func buildParser(ctx context.Context, task *MinimalTaskMeta) (mydump.Parser, error) {
 	store, err := getStore(ctx, task.Dir)
 	if err != nil {
 		return nil, err
@@ -238,4 +161,84 @@ func buildParser(ctx context.Context, task MinimalTaskMeta) (mydump.Parser, erro
 	}
 	parser.SetLogger(log.Logger{Logger: logutil.BgLogger()})
 	return parser, nil
+}
+
+func buildEncoder(task *MinimalTaskMeta) (importer.KvEncoder, error) {
+	idAlloc := kv.NewPanickingAllocators(task.Chunk.PrevRowIDMax)
+	tbl, err := tables.TableFromMeta(idAlloc, task.Table.Info)
+	if err != nil {
+		return nil, err
+	}
+	cfg := &encode.EncodingConfig{
+		SessionOptions: encode.SessionOptions{
+			SQLMode:        task.SessionVars.SQLMode,
+			Timestamp:      task.Mode.Physical.Timestamp,
+			SysVars:        task.SessionVars.SysVars,
+			AutoRandomSeed: task.Chunk.PrevRowIDMax,
+		},
+		Path:   task.Chunk.Path,
+		Table:  tbl,
+		Logger: log.Logger{Logger: logutil.BgLogger()},
+	}
+
+	// parse stmt to load data stmt
+	stmt, err := parser.New().ParseOneStmt(task.Stmt, "", "")
+	if err != nil {
+		return nil, err
+	}
+	loadDataStmt, ok := stmt.(*ast.LoadDataStmt)
+	if !ok {
+		return nil, errors.Errorf("stmt %s is not load data stmt", task.Stmt)
+	}
+
+	fieldMappings, columns := importer.GenerateFieldMappings(loadDataStmt.ColumnsAndUserVars, loadDataStmt.ColumnAssignments, tbl)
+	insertColumns, err := importer.GenerateInsertColumns(columns, loadDataStmt.ColumnAssignments, tbl)
+	if err != nil {
+		return nil, err
+	}
+	return importer.NewTableKVEncoder(cfg, loadDataStmt.ColumnAssignments, loadDataStmt.ColumnsAndUserVars, fieldMappings, insertColumns)
+}
+
+func lightningSortedKVDir(jobID int64) string {
+	return fmt.Sprintf("import_%d", jobID)
+}
+
+func genBackendConfig(taskMeta *TaskMeta) (*ingest.Config, error) {
+	sortedKVDir := lightningSortedKVDir(taskMeta.JobID)
+	return ingest.GenConfig(ingest.WithSortedKVDir(sortedKVDir))
+}
+
+// TODO: merge the same logic in ingest and table_importer
+// TODO: add MemRoot and DiskQuota
+func createLocalBackend(ctx context.Context, taskMeta *TaskMeta) (*backend.Backend, error) {
+	backendCfg, err := genBackendConfig(taskMeta)
+	if err != nil {
+		return nil, err
+	}
+
+	backend, err := ingest.CreateLocalBackend(ctx, backendCfg)
+	if err != nil {
+		return nil, err
+	}
+	return &backend, nil
+}
+
+func genEngineCfg(taskMeta *TaskMeta) *backend.EngineConfig {
+	return ingest.GenerateLocalEngineConfig(taskMeta.JobID, taskMeta.Table.DBName, taskMeta.Table.Info.Name.String())
+}
+
+func openEngine(ctx context.Context, taskMeta *TaskMeta, engineID int32, backend *backend.Backend) (*backend.OpenedEngine, error) {
+	cfg := genEngineCfg(taskMeta)
+	return backend.OpenEngine(ctx, cfg, taskMeta.Table.Info.Name.String(), engineID)
+}
+
+func importAndCleanupEngine(ctx context.Context, engine *backend.OpenedEngine) error {
+	closedEngine, err := engine.Close(ctx)
+	if err != nil {
+		return err
+	}
+	if err := closedEngine.Import(ctx, int64(config.SplitRegionSize), int64(config.SplitRegionKeys)); err != nil {
+		return err
+	}
+	return closedEngine.Cleanup(ctx)
 }

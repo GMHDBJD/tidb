@@ -30,7 +30,7 @@ import (
 
 // ImportSubtaskExecutor is a subtask executor for load data.
 type ImportSubtaskExecutor struct {
-	task MinimalTaskMeta
+	task *MinimalTaskMeta
 }
 
 // Run implements the SubtaskExecutor.Run interface.
@@ -88,7 +88,7 @@ func init() {
 			if !ok {
 				return nil, errors.Errorf("invalid task type %T", minimalTask)
 			}
-			return &ImportSubtaskExecutor{task: task}, nil
+			return &ImportSubtaskExecutor{task: &task}, nil
 		},
 	)
 }

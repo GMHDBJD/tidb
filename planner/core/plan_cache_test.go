@@ -429,7 +429,7 @@ func TestNonPreparedPlanCacheParamInit(t *testing.T) {
 	tk.MustExec(`insert into tx values (3.0, 3)`)
 	tk.MustQuery("select json_object('k', a) = json_object('k', b) from tx").Check(testkit.Rows("1")) // no error
 	tk.MustQuery("select json_object('k', a) = json_object('k', b) from tx").Check(testkit.Rows("1"))
-	tk.MustQuery("select @@last_plan_from_cache").Check(testkit.Rows("1"))
+	tk.MustQuery("select @@last_plan_from_cache").Check(testkit.Rows("0"))
 }
 
 func TestNonPreparedPlanCacheBinding(t *testing.T) {
@@ -1623,11 +1623,10 @@ func TestNonPreparedPlanExplainWarning(t *testing.T) {
 	unsupported := []string{
 		"select /*+ use_index(t1, idx_b) */ * from t1 where a > 1 and b < 2",               // hint
 		"select a, sum(b) as c from t1 where a > 1 and b < 2 group by a having sum(b) > 1", // having
-		"select * from t1 limit 1",                                     // limit
-		"select * from (select * from t1) t",                           // sub-query
-		"select * from t1 where a in (select a from t)",                // uncorrelated sub-query
-		"select * from t1 where a in (select a from t where a > t1.a)", // correlated sub-query
-		"select * from t where j < 1",                                  // json
+		"select * from (select * from t1) t",                                               // sub-query
+		"select * from t1 where a in (select a from t)",                                    // uncorrelated sub-query
+		"select * from t1 where a in (select a from t where a > t1.a)",                     // correlated sub-query
+		"select * from t where j < 1",                                                      // json
 		"select * from t where a > 1 and j < 1",
 		"select * from t where e < '1'", // enum
 		"select * from t where a > 1 and e < '1'",
@@ -1649,9 +1648,8 @@ func TestNonPreparedPlanExplainWarning(t *testing.T) {
 	}
 
 	reasons := []string{
-		"skip non-prepared plan-cache: queries that have hints, aggregation, window-function, order-by, limit and lock are not supported",
-		"skip non-prepared plan-cache: queries that have hints, aggregation, window-function, order-by, limit and lock are not supported",
-		"skip non-prepared plan-cache: queries that have hints, aggregation, window-function, order-by, limit and lock are not supported",
+		"skip non-prepared plan-cache: queries that have hints, having-clause, window-function are not supported",
+		"skip non-prepared plan-cache: queries that have hints, having-clause, window-function are not supported",
 		"skip non-prepared plan-cache: queries that have sub-queries are not supported",
 		"skip non-prepared plan-cache: queries that access partitioning table are not supported",
 		"skip non-prepared plan-cache: queries that access partitioning table are not supported",
