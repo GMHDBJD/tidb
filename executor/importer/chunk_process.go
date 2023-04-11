@@ -112,8 +112,8 @@ func NewChunkProcessor(
 	encoder KvEncoder,
 	chunkInfo *checkpoints.ChunkCheckpoint,
 	logger *zap.Logger,
-	dataWriter *backend.LocalEngineWriter,
-	indexWriter *backend.LocalEngineWriter,
+	dataWriter backend.EngineWriter,
+	indexWriter backend.EngineWriter,
 	keyspace []byte,
 ) *chunkProcessor {
 	return &chunkProcessor{

@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
+	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/disttask/framework/scheduler"
@@ -29,7 +30,7 @@ import (
 // ImportScheduler is a scheduler for load data.
 type ImportScheduler struct {
 	taskMeta         *TaskMeta
-	lightningBackend *backend.Backend
+	lightningBackend *local.Backend
 	indexEngine      *backend.OpenedEngine
 	dataEngines      []*backend.OpenedEngine
 }

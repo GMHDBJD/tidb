@@ -22,6 +22,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/encode"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
+	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
@@ -210,26 +211,23 @@ func genBackendConfig(taskMeta *TaskMeta) (*ingest.Config, error) {
 
 // TODO: merge the same logic in ingest and table_importer
 // TODO: add MemRoot and DiskQuota
-func createLocalBackend(ctx context.Context, taskMeta *TaskMeta) (*backend.Backend, error) {
+func createLocalBackend(ctx context.Context, taskMeta *TaskMeta) (*local.Backend, error) {
 	backendCfg, err := genBackendConfig(taskMeta)
 	if err != nil {
 		return nil, err
 	}
 
-	backend, err := ingest.CreateLocalBackend(ctx, backendCfg)
-	if err != nil {
-		return nil, err
-	}
-	return &backend, nil
+	return ingest.CreateLocalBackend(ctx, backendCfg)
 }
 
 func genEngineCfg(taskMeta *TaskMeta) *backend.EngineConfig {
 	return ingest.GenerateLocalEngineConfig(taskMeta.JobID, taskMeta.Table.DBName, taskMeta.Table.Info.Name.String())
 }
 
-func openEngine(ctx context.Context, taskMeta *TaskMeta, engineID int32, backend *backend.Backend) (*backend.OpenedEngine, error) {
+func openEngine(ctx context.Context, taskMeta *TaskMeta, engineID int32, bc *local.Backend) (*backend.OpenedEngine, error) {
 	cfg := genEngineCfg(taskMeta)
-	return backend.OpenEngine(ctx, cfg, taskMeta.Table.Info.Name.String(), engineID)
+	mgr := backend.MakeEngineManager(bc)
+	return mgr.OpenEngine(ctx, cfg, taskMeta.Table.Info.Name.String(), engineID)
 }
 
 func importAndCleanupEngine(ctx context.Context, engine *backend.OpenedEngine) error {

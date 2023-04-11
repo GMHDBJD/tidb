@@ -21,7 +21,6 @@ import (
 
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
-	"github.com/pingcap/tidb/br/pkg/lightning/glue"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/util/generic"
 	"github.com/pingcap/tidb/util/logutil"
@@ -82,16 +81,8 @@ func CreateLocalBackend(ctx context.Context, cfg *Config) (*local.Backend, error
 	}
 
 	logutil.BgLogger().Info("create local backend", zap.String("keyspaceName", cfg.KeyspaceName))
-	glueLit := glue.NoopGlue{}
-	db, err := glueLit.GetDB()
-	if err != nil {
-		return nil, err
-	}
-	regionSizeGetter := &local.TableRegionSizeGetterImpl{
-		DB: db,
-	}
 	backendConfig := local.NewBackendConfig(cfg.Lightning, int(LitRLimit), cfg.KeyspaceName)
-	return local.NewBackend(ctx, tls, backendConfig, regionSizeGetter)
+	return local.NewBackend(ctx, tls, backendConfig, &local.TableRegionSizeGetterImpl{})
 }
 
 func newBackendContext(ctx context.Context, jobID int64, be *local.Backend,
