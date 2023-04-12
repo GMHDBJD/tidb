@@ -66,11 +66,11 @@ func TestTransformSourceType(t *testing.T) {
 }
 
 func TestMakeTableRegions(t *testing.T) {
-	regions, err := makeTableRegions(context.Background(), &TaskMeta{}, 0)
+	regions, err := makeTableRegions(context.Background(), &TaskMeta{}, 0, 0)
 	require.EqualError(t, err, "concurrency must be greater than 0, but got 0")
 	require.Nil(t, regions)
 
-	regions, err = makeTableRegions(context.Background(), &TaskMeta{}, 1)
+	regions, err = makeTableRegions(context.Background(), &TaskMeta{}, 1, 0)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "empty store is not allowed")
 	require.Nil(t, regions)
@@ -83,7 +83,7 @@ func TestMakeTableRegions(t *testing.T) {
 		},
 		Dir: "/tmp/test",
 	}
-	regions, err = makeTableRegions(context.Background(), task, 1)
+	regions, err = makeTableRegions(context.Background(), task, 1, 0)
 	require.EqualError(t, err, "unknown source type: ")
 	require.Nil(t, regions)
 
@@ -107,7 +107,7 @@ func TestMakeTableRegions(t *testing.T) {
 			},
 		},
 	}
-	regions, err = makeTableRegions(context.Background(), task, 1)
+	regions, err = makeTableRegions(context.Background(), task, 1, 0)
 	require.NoError(t, err)
 	require.Len(t, regions, 1)
 	require.Equal(t, regions[0].EngineID, int32(0))
@@ -160,7 +160,7 @@ func TestMakeTableRegions(t *testing.T) {
 			},
 		},
 	}
-	regions, err = makeTableRegions(context.Background(), task, 1)
+	regions, err = makeTableRegions(context.Background(), task, 1, 0)
 	require.NoError(t, err)
 	require.Len(t, regions, 4)
 	chunks := []Chunk{{Offset: 6, EndOffset: 12}, {Offset: 12, EndOffset: 18}, {Offset: 18, EndOffset: 24}, {Offset: 24, EndOffset: 30}}
@@ -180,7 +180,7 @@ func TestMakeTableRegions(t *testing.T) {
 	task.FileInfos[0].Path = filename
 	task.FileInfos[0].Size = dataFileInfo.Size()
 	task.Format.Compression = mydump.CompressionZStd
-	regions, err = makeTableRegions(context.Background(), task, 1)
+	regions, err = makeTableRegions(context.Background(), task, 1, 0)
 	require.NoError(t, err)
 	require.Len(t, regions, 1)
 	require.Equal(t, regions[0].EngineID, int32(0))

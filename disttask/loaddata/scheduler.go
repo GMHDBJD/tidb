@@ -113,12 +113,12 @@ func init() {
 	scheduler.RegisterSchedulerConstructor(
 		proto.LoadData,
 		func(bs []byte, step int64) (scheduler.Scheduler, error) {
-			taskMeta := &TaskMeta{}
+			taskMeta := TaskMeta{}
 			if err := json.Unmarshal(bs, &taskMeta); err != nil {
 				return nil, err
 			}
 			logutil.BgLogger().Info("register scheduler constructor", zap.Any("taskMeta", taskMeta))
-			return &ImportScheduler{taskMeta: taskMeta}, nil
+			return &ImportScheduler{taskMeta: &taskMeta}, nil
 		},
 	)
 }

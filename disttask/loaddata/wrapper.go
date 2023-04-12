@@ -49,7 +49,7 @@ func getStore(ctx context.Context, dir string) (storage.ExternalStorage, error) 
 	return storage.New(ctx, b, opt)
 }
 
-func makeTableRegions(ctx context.Context, task *TaskMeta, concurrency int) ([]*mydump.TableRegion, error) {
+func makeTableRegions(ctx context.Context, task *TaskMeta, concurrency int, rowIDBase int64) ([]*mydump.TableRegion, error) {
 	if concurrency <= 0 {
 		return nil, errors.Errorf("concurrency must be greater than 0, but got %d", concurrency)
 	}
@@ -96,7 +96,12 @@ func makeTableRegions(ctx context.Context, task *TaskMeta, concurrency int) ([]*
 	}
 
 	dataDivideConfig := mydump.NewDataDivideConfig(cfg, len(task.Table.TargetColumns), nil, store, meta)
-	return mydump.MakeTableRegions(ctx, dataDivideConfig)
+	tableRegions, err := mydump.MakeTableRegions(ctx, dataDivideConfig)
+	if err != nil {
+		return nil, err
+	}
+	rebaseRowID(rowIDBase, tableRegions)
+	return tableRegions, nil
 }
 
 func rebaseRowID(rowIDBase int64, tableRegions []*mydump.TableRegion) {

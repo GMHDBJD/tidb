@@ -72,7 +72,7 @@ func (*FlowHandle) ProcessErrFlow(_ context.Context, _ dispatcher.TaskHandle, _ 
 }
 
 func generateSubtaskMetas(ctx context.Context, task *TaskMeta, concurrency int) ([]*SubtaskMeta, error) {
-	tableRegions, err := makeTableRegions(ctx, task, concurrency)
+	tableRegions, err := makeTableRegions(ctx, task, concurrency,0)
 	if err != nil {
 		return nil, err
 	}
