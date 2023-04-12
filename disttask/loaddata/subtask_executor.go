@@ -64,7 +64,6 @@ func (e *ImportSubtaskExecutor) Run(ctx context.Context) error {
 		_, err2 := dataWriter.Close(ctx)
 		err = err2
 	}()
-	defer dataWriter.Close(ctx)
 	indexWriter, err := e.task.IndexEngine.LocalWriter(ctx, &backend.LocalWriterConfig{})
 	if err != nil {
 		return err

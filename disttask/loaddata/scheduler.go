@@ -96,10 +96,7 @@ func (s *ImportScheduler) CleanupSubtaskExecEnv(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := importAndCleanupEngine(ctx, s.indexEngine); err != nil {
-		return err
-	}
-	return nil
+	return importAndCleanupEngine(ctx, s.indexEngine)
 }
 
 // Rollback implements the Scheduler.Rollback interface.
