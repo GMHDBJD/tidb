@@ -40,10 +40,12 @@ func (e *ImportSubtaskExecutor) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer parser.Close()
 	encoder, err := buildEncoder(e.task)
 	if err != nil {
 		return err
 	}
+	defer encoder.Close()
 
 	hasAutoIncrementAutoID := common.TableHasAutoRowID(e.task.Table.Info) &&
 		e.task.Table.Info.AutoRandomBits == 0 && e.task.Table.Info.ShardRowIDBits == 0 &&
@@ -52,10 +54,12 @@ func (e *ImportSubtaskExecutor) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer dataWriter.Close(ctx)
 	indexWriter, err := e.task.IndexEngine.LocalWriter(ctx, &backend.LocalWriterConfig{})
 	if err != nil {
 		return err
 	}
+	defer indexWriter.Close(ctx)
 
 	cp := importer.NewChunkProcessor(
 		parser,
@@ -75,7 +79,6 @@ func (e *ImportSubtaskExecutor) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cp.Close(ctx)
 	return nil
 }
 

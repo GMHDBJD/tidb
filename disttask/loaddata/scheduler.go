@@ -35,7 +35,7 @@ type ImportScheduler struct {
 	dataEngines      []*backend.OpenedEngine
 }
 
-// InitSubtaskExecEnv is used to initialize the environment for the subtask executor.
+// InitSubtaskExecEnv implements the Scheduler.InitSubtaskExecEnv interface.
 func (s *ImportScheduler) InitSubtaskExecEnv(ctx context.Context) error {
 	logutil.BgLogger().Info("InitSubtaskExecEnv", zap.Any("taskMeta", s.taskMeta))
 	backend, err := createLocalBackend(ctx, s.taskMeta)
@@ -52,7 +52,7 @@ func (s *ImportScheduler) InitSubtaskExecEnv(ctx context.Context) error {
 	return nil
 }
 
-// SplitSubtask is used to split the subtask into multiple minimal tasks.
+// SplitSubtask implements the Scheduler.SplitSubtask interface.
 func (s *ImportScheduler) SplitSubtask(ctx context.Context, bs []byte) ([]proto.MinimalTask, error) {
 	logutil.BgLogger().Info("SplitSubtask", zap.Any("taskMeta", s.taskMeta))
 	var subtaskMeta SubtaskMeta
@@ -85,11 +85,12 @@ func (s *ImportScheduler) SplitSubtask(ctx context.Context, bs []byte) ([]proto.
 	return miniTask, nil
 }
 
-// CleanupSubtaskExecEnv is used to clean up the environment for the subtask executor.
+// CleanupSubtaskExecEnv implements the Scheduler.CleanupSubtaskExecEnv interface.
 func (s *ImportScheduler) CleanupSubtaskExecEnv(ctx context.Context) error {
+	defer s.lightningBackend.Close()
 	logutil.BgLogger().Info("CleanupSubtaskExecEnv", zap.Any("taskMeta", s.taskMeta))
-	// TODO: add OnSubtaskFinish callback in scheduler framework.
-	// If subtask failed, we should not import data.
+	// TODO: add OnSubtaskFinish callback in scheduler framework, so we can import immediately after subtask finished.
+	// TODO: If subtask failed, we should not import data.
 	for _, engine := range s.dataEngines {
 		if err := importAndCleanupEngine(ctx, engine); err != nil {
 			return err
@@ -98,11 +99,10 @@ func (s *ImportScheduler) CleanupSubtaskExecEnv(ctx context.Context) error {
 	if err := importAndCleanupEngine(ctx, s.indexEngine); err != nil {
 		return err
 	}
-	s.lightningBackend.Close()
 	return nil
 }
 
-// Rollback is used to rollback all subtasks.
+// Rollback implements the Scheduler.Rollback interface.
 // TODO: add rollback
 func (s *ImportScheduler) Rollback(context.Context) error {
 	logutil.BgLogger().Info("rollback", zap.Any("taskMeta", s.taskMeta))

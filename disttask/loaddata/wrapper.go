@@ -236,6 +236,8 @@ func importAndCleanupEngine(ctx context.Context, engine *backend.OpenedEngine) e
 		return err
 	}
 	if err := closedEngine.Import(ctx, int64(config.SplitRegionSize), int64(config.SplitRegionKeys)); err != nil {
+		// nolint:errcheck
+		_ = closedEngine.Cleanup(ctx)
 		return err
 	}
 	return closedEngine.Cleanup(ctx)
