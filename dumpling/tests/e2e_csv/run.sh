@@ -41,7 +41,7 @@ run() {
     if [ $compress = "space" ]; then
       compress=""
     fi
-    run_dumpling --filetype="csv" --escape-backslash=$escape_backslash --csv-delimiter="$csv_delimiter" --csv-separator="$csv_separator" --compress="$compress"
+    run_dumpling --filetype="csv" --escape-backslash=$escape_backslash --csv-delimiter="$csv_delimiter" --csv-separator="$csv_separator" --compress="$compress" "--csv-line-terminator=$csv_line_terminator"
 
     # construct lightning configuration
     mkdir -p $DUMPLING_TEST_DIR/conf
@@ -72,7 +72,7 @@ run() {
 escape_backslash_arr="true false"
 csv_delimiter_arr="\" '"
 csv_separator_arr=', a aa |*|'
-csv_line_terminator_arr='\n \r\n'
+csv_line_terminator_arr=($'\n' $'\r\n')
 compress_arr='space gzip snappy zstd'
 
 for compress in $compress_arr
@@ -81,7 +81,7 @@ do
   do
     for csv_separator in $csv_separator_arr
     do
-      for csv_line_terminator in $csv_line_terminator_arr
+      for csv_line_terminator in "${csv_line_terminator_arr[@]}"
       do
         for csv_delimiter in $csv_delimiter_arr
         do
