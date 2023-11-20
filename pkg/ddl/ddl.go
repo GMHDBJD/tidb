@@ -268,6 +268,12 @@ type limitJobTask struct {
 	cacheErr error
 }
 
+type Demo struct {
+	Schema    model.CIStr
+	TableInfo *model.TableInfo
+	CS        []CreateTableWithInfoConfigurier
+}
+
 // ddl is used to handle the statements that define the structure or schema of the database.
 type ddl struct {
 	m          sync.RWMutex
@@ -283,6 +289,8 @@ type ddl struct {
 	generalDDLWorkerPool *workerPool
 	// get notification if any DDL coming.
 	ddlJobCh chan struct{}
+
+	batchCreateTables []Demo
 }
 
 // waitSchemaSyncedController is to control whether to waitSchemaSynced or not.
@@ -690,6 +698,7 @@ func newDDL(ctx context.Context, options ...Option) *ddl {
 		limitJobCh:        make(chan *limitJobTask, batchAddingJobs),
 		enableTiFlashPoll: atomicutil.NewBool(true),
 		ddlJobCh:          make(chan struct{}, 100),
+		batchCreateTables: make([]Demo, 0, 100),
 	}
 
 	scheduler.RegisterTaskType(proto.Backfill,
@@ -707,6 +716,7 @@ func newDDL(ctx context.Context, options ...Option) *ddl {
 	variable.EnableDDL = d.EnableDDL
 	variable.DisableDDL = d.DisableDDL
 	variable.SwitchMDL = d.SwitchMDL
+	variable.SwitchBatchCreateTables = d.SwitchBatchCreateTables
 
 	return d
 }
@@ -1302,6 +1312,41 @@ func (d *ddl) SwitchMDL(enable bool) error {
 		return err
 	}
 	logutil.BgLogger().Info("switch metadata lock feature", zap.String("category", "ddl"), zap.Bool("enable", enable))
+	return nil
+}
+
+// SwitchBatchCreateTables enables MDL or disable MDL.
+func (d *ddl) SwitchBatchCreateTables(enable bool) error {
+	isEnableBefore := variable.EnableBatchCreateTables.Load()
+	if isEnableBefore == enable {
+		return nil
+	}
+
+	if !enable {
+		if len(d.batchCreateTables) > 0 {
+			dbName := d.batchCreateTables[0].Schema
+			cs := d.batchCreateTables[0].CS
+			infos := make([]*model.TableInfo, 0, len(d.batchCreateTables))
+			for _, createTable := range d.batchCreateTables {
+				infos = append(infos, createTable.TableInfo)
+			}
+			sessCtx, err := d.sessPool.Get()
+			if err != nil {
+				return err
+			}
+			defer d.sessPool.Put(sessCtx)
+			logutil.BgLogger().Info("commit batch create tables", zap.Int("len", len(infos)))
+			err = d.BatchCreateTableWithInfo(sessCtx, dbName, infos, cs...)
+			d.batchCreateTables = d.batchCreateTables[:0]
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	variable.EnableBatchCreateTables.Store(enable)
+
+	logutil.BgLogger().Info("switch batch create tables", zap.String("category", "ddl"), zap.Bool("enable", enable))
 	return nil
 }
 

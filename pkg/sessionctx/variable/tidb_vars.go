@@ -702,6 +702,9 @@ const (
 	// TiDBEnableMDL indicates whether to enable MDL.
 	TiDBEnableMDL = "tidb_enable_metadata_lock"
 
+	// TiDBEnableBatchCreateTables indicates whether to enable MDL.
+	TiDBEnableBatchCreateTables = "tidb_enable_batch_create_tables"
+
 	// TiDBTSOClientBatchMaxWaitTime indicates the max value of the TSO Batch Wait interval time of PD client.
 	TiDBTSOClientBatchMaxWaitTime = "tidb_tso_client_batch_max_wait_time"
 
@@ -1337,6 +1340,7 @@ const (
 	DefTiDBDefaultStrMatchSelectivity              = 0.8
 	DefTiDBEnableTmpStorageOnOOM                   = true
 	DefTiDBEnableMDL                               = true
+	DefTiDBEnableBatchCreateTables                 = false
 	DefTiFlashFastScan                             = false
 	DefMemoryUsageAlarmRatio                       = 0.7
 	DefMemoryUsageAlarmKeepRecordNum               = 5
@@ -1474,6 +1478,7 @@ var (
 	DDLForce2Queue                    = atomic.NewBool(false)
 	EnableNoopVariables               = atomic.NewBool(DefTiDBEnableNoopVariables)
 	EnableMDL                         = atomic.NewBool(false)
+	EnableBatchCreateTables           = atomic.NewBool(false)
 	AutoAnalyzePartitionBatchSize     = atomic.NewInt64(DefTiDBAutoAnalyzePartitionBatchSize)
 	// EnableFastReorg indicates whether to use lightning to enhance DDL reorg performance.
 	EnableFastReorg = atomic.NewBool(DefTiDBEnableFastReorg)
@@ -1541,6 +1546,8 @@ var (
 	SetPDClientDynamicOption atomic.Pointer[func(string, string)]
 	// SwitchMDL is the func registered by DDL to switch MDL.
 	SwitchMDL func(bool2 bool) error = nil
+	// SwitchBatchCreateTables is the func registered by DDL to switch MDL.
+	SwitchBatchCreateTables func(bool2 bool) error = nil
 	// EnableDDL is the func registered by ddl to enable running ddl in this instance.
 	EnableDDL func() error = nil
 	// DisableDDL is the func registered by ddl to disable running ddl in this instance.

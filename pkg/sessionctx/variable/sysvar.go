@@ -1268,6 +1268,17 @@ var defaultSysVars = []*SysVar{
 	}, GetGlobal: func(_ context.Context, vars *SessionVars) (string, error) {
 		return BoolToOnOff(EnableMDL.Load()), nil
 	}},
+	{Scope: ScopeGlobal, Name: TiDBEnableBatchCreateTables, Value: BoolToOnOff(DefTiDBEnableBatchCreateTables), Type: TypeBool, SetGlobal: func(_ context.Context, vars *SessionVars, val string) error {
+		if EnableBatchCreateTables.Load() != TiDBOptOn(val) {
+			err := SwitchBatchCreateTables(TiDBOptOn(val))
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}, GetGlobal: func(_ context.Context, vars *SessionVars) (string, error) {
+		return BoolToOnOff(EnableMDL.Load()), nil
+	}},
 	{Scope: ScopeGlobal, Name: TiDBEnableDistTask, Value: BoolToOnOff(DefTiDBEnableDistTask), Type: TypeBool, SetGlobal: func(_ context.Context, s *SessionVars, val string) error {
 		if EnableDistTask.Load() != TiDBOptOn(val) {
 			EnableDistTask.Store(TiDBOptOn(val))

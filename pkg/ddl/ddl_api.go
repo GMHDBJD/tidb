@@ -2570,6 +2570,12 @@ func (d *ddl) CreateTable(ctx sessionctx.Context, s *ast.CreateTableStmt) (err e
 		onExist = OnExistIgnore
 	}
 
+	if variable.EnableBatchCreateTables.Load() {
+		d.batchCreateTables = append(d.batchCreateTables, Demo{Schema: schema.Name, TableInfo: tbInfo, CS: []CreateTableWithInfoConfigurier{onExist}})
+		logutil.BgLogger().Info("add create table info")
+		return nil
+	}
+
 	return d.CreateTableWithInfo(ctx, schema.Name, tbInfo, onExist)
 }
 
