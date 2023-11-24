@@ -380,7 +380,7 @@ func (d *ddl) delivery2worker(wk *worker, pool *workerPool, job *model.Job) {
 		// check if this ddl job is synced to all servers.
 		if !job.NotStarted() && (!d.isSynced(job) || !d.maybeAlreadyRunOnce(job.ID)) {
 			if variable.EnableMDL.Load() {
-				exist, version, err := checkMDLInfo(job.ID, d.sessPool)
+				exist, _, err := checkMDLInfo(job.ID, d.sessPool)
 				if err != nil {
 					logutil.BgLogger().Warn("check MDL info failed", zap.String("category", "ddl"), zap.Error(err), zap.String("job", job.String()))
 					// Release the worker resource.
@@ -389,24 +389,12 @@ func (d *ddl) delivery2worker(wk *worker, pool *workerPool, job *model.Job) {
 				} else if exist {
 					// Release the worker resource.
 					pool.put(wk)
-					err = waitSchemaSyncedForMDL(d.ddlCtx, job, version)
-					if err != nil {
-						return
-					}
 					d.setAlreadyRunOnce(job.ID)
 					cleanMDLInfo(d.sessPool, job.ID, d.etcdCli)
 					// Don't have a worker now.
 					return
 				}
 			} else {
-				err := waitSchemaSynced(d.ddlCtx, job, 2*d.lease)
-				if err != nil {
-					logutil.BgLogger().Warn("wait ddl job sync failed", zap.String("category", "ddl"), zap.Error(err), zap.String("job", job.String()))
-					time.Sleep(time.Second)
-					// Release the worker resource.
-					pool.put(wk)
-					return
-				}
 				d.setAlreadyRunOnce(job.ID)
 			}
 		}
@@ -428,12 +416,6 @@ func (d *ddl) delivery2worker(wk *worker, pool *workerPool, job *model.Job) {
 			// Here means the job enters another state (delete only, write only, public, etc...) or is cancelled.
 			// If the job is done or still running or rolling back, we will wait 2 * lease time or util MDL synced to guarantee other servers to update
 			// the newest schema.
-			err := waitSchemaChanged(d.ddlCtx, d.lease*2, schemaVer, job)
-			if err != nil {
-				// May be caused by server closing, shouldn't clean the MDL info.
-				logutil.BgLogger().Info("wait latest schema version error", zap.String("category", "ddl"), zap.Error(err))
-				return
-			}
 			cleanMDLInfo(d.sessPool, job.ID, d.etcdCli)
 			d.synced(job)
 
