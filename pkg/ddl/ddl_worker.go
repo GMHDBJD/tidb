@@ -40,10 +40,12 @@ import (
 	"github.com/pingcap/tidb/pkg/sessionctx/variable"
 	pumpcli "github.com/pingcap/tidb/pkg/tidb-binlog/pump_client"
 	tidbutil "github.com/pingcap/tidb/pkg/util"
+	"github.com/pingcap/tidb/pkg/util/chunk"
 	"github.com/pingcap/tidb/pkg/util/dbterror"
 	"github.com/pingcap/tidb/pkg/util/logutil"
 	"github.com/pingcap/tidb/pkg/util/mathutil"
 	"github.com/pingcap/tidb/pkg/util/resourcegrouptag"
+	"github.com/pingcap/tidb/pkg/util/sqlexec"
 	"github.com/pingcap/tidb/pkg/util/topsql"
 	topsqlstate "github.com/pingcap/tidb/pkg/util/topsql/state"
 	"github.com/tikv/client-go/v2/tikvrpc"
@@ -483,6 +485,39 @@ func (w *worker) registerMDLInfo(job *model.Job, ver int64) error {
 	ids := rows[0].GetString(0)
 	sql := fmt.Sprintf("replace into mysql.tidb_mdl_info (job_id, version, table_ids) values (%d, %d, '%s')", job.ID, ver, ids)
 	_, err = w.sess.Execute(context.Background(), sql, "register-mdl-info")
+	return err
+}
+
+func execSQL(ctx context.Context, sctx sessionctx.Context, query string) ([]chunk.Row, error) {
+	if ctx.Value(kv.RequestSourceKey) == nil {
+		ctx = kv.WithInternalSourceType(ctx, kv.InternalTxnDDL)
+	}
+	rs, err := sctx.(sqlexec.SQLExecutor).ExecuteInternal(ctx, query)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
+	if rs == nil {
+		return nil, nil
+	}
+	var rows []chunk.Row
+	defer terror.Call(rs.Close)
+	if rows, err = sqlexec.DrainRecordSet(ctx, rs, 8); err != nil {
+		return nil, errors.Trace(err)
+	}
+	return rows, nil
+}
+
+// registerMDLInfo registers metadata lock info.
+func registerMDLInfo(sctx sessionctx.Context, job *model.Job, tableID int64, ver int64) error {
+	if !variable.EnableMDL.Load() {
+		return nil
+	}
+	if ver == 0 {
+		return nil
+	}
+	sql := fmt.Sprintf("replace into mysql.tidb_mdl_info (job_id, version, table_ids) values (%d, %d, '%d')", job.ID, ver, tableID)
+	_, err := execSQL(context.Background(), sctx, sql)
 	return err
 }
 

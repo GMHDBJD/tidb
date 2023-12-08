@@ -23,6 +23,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"slices"
 	"strconv"
 	"strings"
@@ -40,6 +41,7 @@ import (
 	"github.com/pingcap/tidb/pkg/expression"
 	"github.com/pingcap/tidb/pkg/infoschema"
 	"github.com/pingcap/tidb/pkg/kv"
+	"github.com/pingcap/tidb/pkg/meta"
 	"github.com/pingcap/tidb/pkg/meta/autoid"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/ast"
@@ -2730,15 +2732,42 @@ func (d *ddl) CreateTableWithInfo(
 		return nil
 	}
 
-	err = d.DoDDLJob(ctx, job)
+	job.ID = rand.Int63()
+
+	if err := sessiontxn.NewTxn(context.Background(), ctx); err != nil {
+		return err
+	}
+	ctx.GetSessionVars().SetInTxn(true)
+	txn, err := ctx.Txn(true)
 	if err != nil {
-		// table exists, but if_not_exists flags is true, so we ignore this error.
-		if c.OnExist == OnExistIgnore && infoschema.ErrTableExists.Equal(err) {
-			ctx.GetSessionVars().StmtCtx.AppendNote(err)
-			err = nil
-		}
-	} else {
-		err = d.createTableWithInfoPost(ctx, tbInfo, job.SchemaID)
+		logutil.BgLogger().Error("txn error", zap.Error(err))
+		ctx.StmtRollback(context.Background(), false)
+		ctx.RollbackTxn(context.Background())
+		return err
+	}
+	t := meta.NewMeta(txn)
+	if _, err := job.Encode(true); err != nil {
+		return err
+
+	}
+	ver, err := onCreateTable(d.ddlCtx, t, job)
+	if err != nil {
+		return err
+	}
+	registerMDLInfo(ctx, job, job.TableID, ver)
+
+	ctx.StmtCommit(context.Background())
+	err = ctx.CommitTxn(context.Background())
+	d.unlockSchemaVersion(job.ID)
+	if err != nil {
+		logutil.BgLogger().Info("commit error", zap.Int64("ver", ver), zap.Error(err))
+		return err
+	}
+
+	err = d.createTableWithInfoPost(ctx, tbInfo, job.SchemaID)
+	if err != nil {
+		logutil.BgLogger().Info("create tabel with info post", zap.Error(err))
+		return err
 	}
 
 	err = d.callHookOnChanged(job, err)
