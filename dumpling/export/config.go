@@ -275,18 +275,6 @@ func (conf *Config) GetDriverConfig(db string) *mysql.Config {
 	if conf.Security.TLS != nil {
 		driverCfg.TLS = conf.Security.TLS
 	} else {
-		// Use TLS first.
-		driverCfg.AllowFallbackToPlaintext = true
-		minTLSVersion := uint16(tls.VersionTLS12)
-		if conf.MinTLSVersion != 0 {
-			minTLSVersion = conf.MinTLSVersion
-		}
-		/* #nosec G402 */
-		driverCfg.TLS = &tls.Config{
-			InsecureSkipVerify: true,
-			MinVersion:         minTLSVersion,
-			NextProtos:         []string{"h2", "http/1.1"}, // specify `h2` to let Go use HTTP/2.
-		}
 	}
 	if conf.AllowCleartextPasswords {
 		driverCfg.AllowCleartextPasswords = true
