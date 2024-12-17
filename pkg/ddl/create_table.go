@@ -343,6 +343,7 @@ func onCreateView(jobCtx *jobContext, job *model.Job) (ver int64, _ error) {
 			err = metaMut.DropTableOrView(schemaID, oldTableID)
 			if err != nil {
 				job.State = model.JobStateCancelled
+				logutil.DDLLogger().Info("drop table or view", zap.Error(err))
 				return ver, errors.Trace(err)
 			}
 			err = metaMut.GetAutoIDAccessors(schemaID, oldTableID).Del()
@@ -353,6 +354,7 @@ func onCreateView(jobCtx *jobContext, job *model.Job) (ver int64, _ error) {
 		}
 		err = createTableOrViewWithCheck(metaMut, job, schemaID, tbInfo)
 		if err != nil {
+			logutil.DDLLogger().Info("create table or view with check", zap.Error(err))
 			job.State = model.JobStateCancelled
 			return ver, errors.Trace(err)
 		}
