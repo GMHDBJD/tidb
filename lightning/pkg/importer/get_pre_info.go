@@ -300,6 +300,7 @@ func NewPreImportInfoGetter(
 			encBuilder = tidb.NewEncodingBuilder()
 		case config.BackendLocal:
 			encBuilder = local.NewEncodingBuilder(context.Background())
+		case config.BackendImportInto:
 		default:
 			return nil, common.ErrUnknownBackend.GenWithStackByArgs(cfg.TikvImporter.Backend)
 		}

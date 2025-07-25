@@ -73,7 +73,7 @@ const WholeTableEngineID = math.MaxInt32
 // remember to increase the version number in case of incompatible change.
 const (
 	CheckpointTableNameTask   = "task_v2"
-	CheckpointTableNameTable  = "table_v10"
+	CheckpointTableNameTable  = "table_v11"
 	CheckpointTableNameEngine = "engine_v5"
 	CheckpointTableNameChunk  = "chunk_v6"
 )
@@ -117,6 +117,7 @@ const (
 			auto_rand_base bigint NOT NULL DEFAULT 0,
 			auto_incr_base bigint NOT NULL DEFAULT 0,
 			auto_row_id_base bigint NOT NULL DEFAULT 0,
+			import_job_id varchar(64) DEFAULT '',
 			INDEX(task_id)
 		);`
 	CreateEngineTableTemplate = `
@@ -173,7 +174,7 @@ const (
 		FROM %s.%s WHERE table_name = ?
 		ORDER BY engine_id, path, offset;`
 	ReadTableRemainTemplate = `
-		SELECT status, table_id, table_info, kv_bytes, kv_kvs, kv_checksum, auto_rand_base, auto_incr_base, auto_row_id_base
+		SELECT status, table_id, table_info, kv_bytes, kv_kvs, kv_checksum, auto_rand_base, auto_incr_base, auto_row_id_base, import_job_id
 		FROM %s.%s WHERE table_name = ?;`
 	ReplaceEngineTemplate = `
 		REPLACE INTO %s.%s (table_name, engine_id, status) VALUES (?, ?, ?);`
@@ -201,7 +202,9 @@ const (
 	UpdateTableStatusTemplate = `
 		UPDATE %s.%s SET status = ? WHERE table_name = ?;`
 	UpdateTableChecksumTemplate = `UPDATE %s.%s SET kv_bytes = ?, kv_kvs = ?, kv_checksum = ? WHERE table_name = ?;`
-	UpdateEngineTemplate        = `
+	UpdateTableJobIDTemplate    = `
+    	UPDATE %s.%s SET import_job_id = ? WHERE table_name = ?;`
+	UpdateEngineTemplate = `
 		UPDATE %s.%s SET status = ? WHERE (table_name, engine_id) = (?, ?);`
 	DeleteCheckpointRecordTemplate = "DELETE FROM %s.%s WHERE table_name = ?;"
 )
@@ -363,6 +366,8 @@ type TableCheckpoint struct {
 	AutoIncrBase int64
 	// used to record the max auto row ID that has been used.
 	AutoRowIDBase int64
+	// stores the IMPORT INTO job ID when using DETACHED mode
+	ImportJobID string
 }
 
 // DeepCopy returns a deep copy of the table checkpoint.
@@ -412,12 +417,14 @@ type TableCheckpointDiff struct {
 	// it means some XXXBase fields has been updated.
 	hasRebase     bool
 	hasChecksum   bool
+	hasJobID      bool
 	status        CheckpointStatus
 	engines       map[int32]engineCheckpointDiff
 	checksum      verify.KVChecksum
 	autoRandBase  int64
 	autoIncrBase  int64
 	autoRowIDBase int64
+	jobID         string
 }
 
 // NewTableCheckpointDiff returns a new TableCheckpointDiff.
@@ -456,6 +463,9 @@ func (cp *TableCheckpoint) Apply(cpd *TableCheckpointDiff) {
 		cp.AutoRandBase = max(cp.AutoRandBase, cpd.autoRandBase)
 		cp.AutoIncrBase = max(cp.AutoIncrBase, cpd.autoIncrBase)
 		cp.AutoRowIDBase = max(cp.AutoRowIDBase, cpd.autoRowIDBase)
+	}
+	if cpd.hasJobID {
+		cp.ImportJobID = cpd.jobID
 	}
 	for engineID, engineDiff := range cpd.engines {
 		engine := cp.Engines[engineID]
@@ -519,6 +529,17 @@ func (merger *StatusCheckpointMerger) MergeInto(cpd *TableCheckpointDiff) {
 			chunks:    make(map[ChunkCheckpointKey]chunkCheckpointDiff),
 		})
 	}
+}
+
+// TableJobIDMerger is the merger for table import job IDs
+type TableJobIDMerger struct {
+	JobID string
+}
+
+// MergeInto implements TableCheckpointMerger.MergeInto
+func (merger *TableJobIDMerger) MergeInto(cpd *TableCheckpointDiff) {
+	cpd.hasJobID = true
+	cpd.jobID = merger.JobID
 }
 
 // ChunkCheckpointMerger is the merger for chunk updates.
@@ -961,9 +982,10 @@ func (cpdb *MySQLCheckpointsDB) Get(ctx context.Context, tableName string) (*Tab
 		var status uint8
 		var kvs, bytes, checksum uint64
 		var rawTableInfo []byte
+		var importJobID string
 		if err := tableRow.Scan(
 			&status, &cp.TableID, &rawTableInfo, &bytes, &kvs, &checksum,
-			&cp.AutoRandBase, &cp.AutoIncrBase, &cp.AutoRowIDBase,
+			&cp.AutoRandBase, &cp.AutoIncrBase, &cp.AutoRowIDBase, &importJobID,
 		); err != nil {
 			if err == sql.ErrNoRows {
 				return errors.NotFoundf("checkpoint for table %s", tableName)
@@ -976,6 +998,7 @@ func (cpdb *MySQLCheckpointsDB) Get(ctx context.Context, tableName string) (*Tab
 		}
 		cp.Checksum = verify.MakeKVChecksum(bytes, kvs, checksum)
 		cp.Status = CheckpointStatus(status)
+		cp.ImportJobID = importJobID
 		return nil
 	})
 	if err != nil {
@@ -1045,6 +1068,7 @@ func (cpdb *MySQLCheckpointsDB) Update(taskCtx context.Context, checkpointDiffs 
 	tableStatusQuery := common.SprintfWithIdentifiers(UpdateTableStatusTemplate, cpdb.schema, CheckpointTableNameTable)
 	tableChecksumQuery := common.SprintfWithIdentifiers(UpdateTableChecksumTemplate, cpdb.schema, CheckpointTableNameTable)
 	engineStatusQuery := common.SprintfWithIdentifiers(UpdateEngineTemplate, cpdb.schema, CheckpointTableNameEngine)
+	tableJobIDQuery := common.SprintfWithIdentifiers(UpdateTableJobIDTemplate, cpdb.schema, CheckpointTableNameTable)
 
 	s := common.SQLWithRetry{DB: cpdb.db, Logger: log.Wrap(logutil.Logger(taskCtx))}
 	return s.Transact(taskCtx, "update checkpoints", func(c context.Context, tx *sql.Tx) error {
@@ -1076,6 +1100,13 @@ func (cpdb *MySQLCheckpointsDB) Update(taskCtx context.Context, checkpointDiffs 
 		if e != nil {
 			return errors.Trace(e)
 		}
+		// Inside transaction
+		tableJobIDStmt, e := tx.PrepareContext(c, tableJobIDQuery)
+		if e != nil {
+			return errors.Trace(e)
+		}
+		//nolint: errcheck
+		defer tableJobIDStmt.Close()
 		//nolint: errcheck
 		defer engineStatusStmt.Close()
 		for tableName, cpd := range checkpointDiffs {
@@ -1091,6 +1122,11 @@ func (cpdb *MySQLCheckpointsDB) Update(taskCtx context.Context, checkpointDiffs 
 			}
 			if cpd.hasChecksum {
 				if _, e := tableChecksumStmt.ExecContext(c, cpd.checksum.SumSize(), cpd.checksum.SumKVS(), cpd.checksum.Sum(), tableName); e != nil {
+					return errors.Trace(e)
+				}
+			}
+			if cpd.hasJobID {
+				if _, e := tableJobIDStmt.ExecContext(c, cpd.jobID, tableName); e != nil {
 					return errors.Trace(e)
 				}
 			}

@@ -95,7 +95,8 @@ type EngineConfig struct {
 	// local backend specified configuration
 	Local LocalEngineConfig
 	// local backend external engine specified configuration
-	External *ExternalEngineConfig
+	External   *ExternalEngineConfig
+	ImportInto ImportIntoConfig
 	// KeepSortDir indicates whether to keep the temporary sort directory
 	// when opening the engine, instead of removing it.
 	KeepSortDir bool
@@ -118,6 +119,11 @@ type LocalEngineConfig struct {
 
 	// blocksize
 	BlockSize int
+}
+
+type ImportIntoConfig struct {
+	TableMeta *mydump.MDTableMeta
+	BaseURI   string
 }
 
 // ExternalEngineConfig is the configuration used for local backend external engine.

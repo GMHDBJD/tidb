@@ -127,6 +127,10 @@ func (tr *TableImporter) importTable(
 	default:
 	}
 
+	if isImportIntoBackend(rc.cfg) {
+		return tr.importTableWithImportInto(ctx, rc, cp)
+	}
+
 	metaMgr := rc.metaMgrBuilder.TableMetaMgr(tr)
 	// no need to do anything if the chunks are already populated
 	if len(cp.Engines) > 0 {
@@ -275,6 +279,85 @@ func (tr *TableImporter) importTable(
 
 	// 5. Post-process. With the last parameter set to false, we can allow delay analyze execute latter
 	return tr.postProcess(ctx, rc, cp, false /* force-analyze */, metaMgr)
+}
+func (tr *TableImporter) importTableWithImportInto(ctx context.Context, rc *Controller, cp *checkpoints.TableCheckpoint) (bool, error) {
+	if cp.Status >= checkpoints.CheckpointStatusAllWritten {
+		tr.logger.Info("table already imported, skipping", zap.String("table", tr.tableName))
+		return false, nil
+	}
+
+	var totalSize int64
+	for _, dataFile := range tr.tableMeta.DataFiles {
+		totalSize += dataFile.FileMeta.FileSize
+	}
+
+	if len(tr.tableMeta.DataFiles) == 0 {
+		tr.logger.Info("no data files to import", zap.String("table", tr.tableName))
+		return tr.updateImportIntoCheckpoint(ctx, rc, cp)
+	}
+
+	tr.logger.Info("start importing table with IMPORT INTO",
+		zap.String("table", tr.tableName),
+		zap.Int("fileCount", len(tr.tableMeta.DataFiles)),
+		zap.Int64("totalSize", totalSize))
+
+	_, engineUUID := backend.MakeUUID(tr.tableName, checkpoints.WholeTableEngineID)
+
+	engineCfg := &backend.EngineConfig{
+		TableInfo: tr.tableInfo,
+		ImportInto: backend.ImportIntoConfig{
+			TableMeta: tr.tableMeta,
+			BaseURI:   rc.store.URI(),
+		},
+	}
+
+	err := rc.backend.OpenEngine(ctx, engineCfg, engineUUID)
+	if err != nil {
+		return false, errors.Trace(err)
+	}
+
+	err = rc.backend.CloseEngine(ctx, engineCfg, engineUUID)
+	if err != nil {
+		return false, errors.Trace(err)
+	}
+
+	err = rc.backend.ImportEngine(ctx, engineUUID, 0, 0)
+	if err != nil {
+		tr.logger.Error("failed to execute IMPORT INTO",
+			zap.String("table", tr.tableName),
+			zap.Error(err))
+		return false, errors.Trace(err)
+	}
+
+	err = rc.backend.CleanupEngine(ctx, engineUUID)
+	if err != nil {
+		return false, errors.Trace(err)
+	}
+
+	tr.logger.Info("successfully imported table with IMPORT INTO",
+		zap.String("table", tr.tableName),
+		zap.Int("fileCount", len(tr.tableMeta.DataFiles)))
+
+	if rc.status != nil {
+		rc.status.FinishedFileSize.Add(totalSize)
+	}
+
+	return tr.updateImportIntoCheckpoint(ctx, rc, cp)
+}
+
+func (tr *TableImporter) updateImportIntoCheckpoint(ctx context.Context, rc *Controller, cp *checkpoints.TableCheckpoint) (bool, error) {
+	// 标记整个表为已完成
+	merger := &checkpoints.StatusCheckpointMerger{
+		Status:   checkpoints.CheckpointStatusAllWritten,
+		EngineID: checkpoints.WholeTableEngineID,
+	}
+
+	rc.saveCpCh <- saveCp{
+		tableName: tr.tableName,
+		merger:    merger,
+	}
+
+	return false, nil
 }
 
 // Close implements the Importer interface.

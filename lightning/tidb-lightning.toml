@@ -76,7 +76,7 @@ schema = "tidb_lightning_checkpoint"
 # Where to store the checkpoints.
 # Set to "file" to store as a local file.
 # Set to "mysql" to store into a remote MySQL-compatible database
-driver = "file"
+driver = "mysql"
 # The data source name (DSN) indicating the location of the checkpoint storage.
 # For "file" driver, the DSN is a path. If not specified, Lightning would default to "/tmp/CHKPTSCHEMA.pb".
 # For "mysql" driver, the DSN is a URL in the form "USER:PASS@tcp(HOST:PORT)/".
@@ -111,7 +111,7 @@ strategy = ""
 
 [tikv-importer]
 # Delivery backend, can be "importer", "local" or "tidb".
-backend = "importer"
+backend = "importinto"
 # Address of tikv-importer when the backend is 'importer'
 addr = "127.0.0.1:8287"
 
@@ -187,7 +187,7 @@ read-block-size = '64KiB'
 batch-import-ratio = 0.75
 
 # mydumper local source data directory
-data-source-dir = "/tmp/export-20180328-200751"
+data-source-dir = "s3://csv?access-key=minioadmin&secret-access-key=minioadmin&endpoint=http://10.2.4.3:9000"
 # if no-schema is set true, lightning will get schema information from tidb-server directly without creating them.
 no-schema = false
 # the character set of the schema files; only supports one of:
@@ -253,7 +253,7 @@ delimiter = '"'
 # If the file content matches both the terminator and separator, the terminator takes precedence.
 terminator = ''
 # whether the CSV files contain a header. If true, the first line will be skipped
-header = true
+header = false
 # whether the CSV contains any NULL value. If true, all columns from CSV cannot be NULL.
 not-null = false
 # if non-null = false (i.e. CSV can contain NULL), fields equal to this value will be treated as NULL

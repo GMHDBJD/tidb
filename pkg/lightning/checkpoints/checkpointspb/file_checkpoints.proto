@@ -55,6 +55,7 @@ message TableCheckpointModel {
     int64 autoIncrBase = 15;
     // used to record the max auto row ID that has been used.
     int64 autoRowIDBase = 16;
+    string import_job_id = 17;
 }
 
 message EngineCheckpointModel {

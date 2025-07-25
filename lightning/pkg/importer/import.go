@@ -44,6 +44,7 @@ import (
 	tidbkv "github.com/pingcap/tidb/pkg/kv"
 	"github.com/pingcap/tidb/pkg/lightning/backend"
 	"github.com/pingcap/tidb/pkg/lightning/backend/encode"
+	"github.com/pingcap/tidb/pkg/lightning/backend/importinto"
 	"github.com/pingcap/tidb/pkg/lightning/backend/local"
 	"github.com/pingcap/tidb/pkg/lightning/backend/tidb"
 	"github.com/pingcap/tidb/pkg/lightning/checkpoints"
@@ -434,6 +435,8 @@ func NewImportControllerWithPauser(
 		if err != nil {
 			return nil, err
 		}
+	case config.BackendImportInto:
+		backendObj = importinto.NewImportIntoBackend(ctx, db, cfg, cpdb)
 	default:
 		return nil, common.ErrUnknownBackend.GenWithStackByArgs(cfg.TikvImporter.Backend)
 	}
@@ -1821,6 +1824,10 @@ func isLocalBackend(cfg *config.Config) bool {
 
 func isTiDBBackend(cfg *config.Config) bool {
 	return cfg.TikvImporter.Backend == config.BackendTiDB
+}
+
+func isImportIntoBackend(cfg *config.Config) bool {
+	return cfg.TikvImporter.Backend == config.BackendImportInto
 }
 
 // preCheckRequirements checks
