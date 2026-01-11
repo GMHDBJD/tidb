@@ -35,6 +35,13 @@ const (
 	DefaultPollInterval = 5 * time.Second
 	// DefaultLogInterval is the default interval for logging progress.
 	DefaultLogInterval = 1 * time.Minute
+	// defaultCancelGroupGracePeriod is the maximum time to wait for late-created jobs to become visible
+	// when cancelling by group key.
+	defaultCancelGroupGracePeriod = 5 * time.Second
+	// defaultCancelGroupPollInterval is the interval for polling jobs by group key during cancellation.
+	defaultCancelGroupPollInterval = 500 * time.Millisecond
+	// maxCancelAttempts is the maximum number of cancel attempts per job ID in one Cancel() invocation.
+	maxCancelAttempts = 3
 )
 
 // JobOrchestrator orchestrates the submission and monitoring of import jobs.
@@ -45,12 +52,14 @@ type JobOrchestrator interface {
 
 // DefaultJobOrchestrator is the default implementation of JobOrchestrator.
 type DefaultJobOrchestrator struct {
-	submitter         JobSubmitter
-	cpMgr             CheckpointManager
-	monitor           JobMonitor
-	submitConcurrency int
-	logger            log.Logger
-	sdk               importsdk.SDK
+	submitter          JobSubmitter
+	cpMgr              CheckpointManager
+	monitor            JobMonitor
+	submitConcurrency  int
+	logger             log.Logger
+	sdk                importsdk.SDK
+	cancelGracePeriod  time.Duration
+	cancelPollInterval time.Duration
 
 	activeJobs []*ImportJob
 }
@@ -59,15 +68,17 @@ const cancelledByUserMessage = "cancelled by user"
 
 // OrchestratorConfig configures the job orchestrator.
 type OrchestratorConfig struct {
-	Submitter         JobSubmitter
-	CheckpointMgr     CheckpointManager
-	SDK               importsdk.SDK
-	Monitor           JobMonitor
-	SubmitConcurrency int
-	PollInterval      time.Duration
-	LogInterval       time.Duration
-	Logger            log.Logger
-	ProgressUpdater   ProgressUpdater
+	Submitter          JobSubmitter
+	CheckpointMgr      CheckpointManager
+	SDK                importsdk.SDK
+	Monitor            JobMonitor
+	SubmitConcurrency  int
+	PollInterval       time.Duration
+	LogInterval        time.Duration
+	CancelGracePeriod  time.Duration
+	CancelPollInterval time.Duration
+	Logger             log.Logger
+	ProgressUpdater    ProgressUpdater
 }
 
 // NewJobOrchestrator creates a new job orchestrator.
@@ -85,18 +96,29 @@ func NewJobOrchestrator(cfg OrchestratorConfig) JobOrchestrator {
 		logInterval = DefaultLogInterval
 	}
 
+	cancelGracePeriod := cfg.CancelGracePeriod
+	if cancelGracePeriod <= 0 {
+		cancelGracePeriod = defaultCancelGroupGracePeriod
+	}
+	cancelPollInterval := cfg.CancelPollInterval
+	if cancelPollInterval <= 0 {
+		cancelPollInterval = defaultCancelGroupPollInterval
+	}
+
 	monitor := cfg.Monitor
 	if monitor == nil {
 		monitor = NewJobMonitor(cfg.SDK, cfg.CheckpointMgr, pollInterval, logInterval, cfg.Logger, cfg.ProgressUpdater)
 	}
 
 	return &DefaultJobOrchestrator{
-		submitter:         cfg.Submitter,
-		cpMgr:             cfg.CheckpointMgr,
-		monitor:           monitor,
-		submitConcurrency: submitConcurrency,
-		logger:            cfg.Logger,
-		sdk:               cfg.SDK,
+		submitter:          cfg.Submitter,
+		cpMgr:              cfg.CheckpointMgr,
+		monitor:            monitor,
+		submitConcurrency:  submitConcurrency,
+		logger:             cfg.Logger,
+		sdk:                cfg.SDK,
+		cancelGracePeriod:  cancelGracePeriod,
+		cancelPollInterval: cancelPollInterval,
 	}
 }
 
@@ -208,16 +230,74 @@ func (o *DefaultJobOrchestrator) Cancel(ctx context.Context) error {
 	o.logger.Info("cancelling import jobs", zap.String("groupKey", groupKey), zap.Int("count", len(jobIDsToCancel)))
 
 	var firstErr error
+	cancelAttempts := make(map[int64]int, len(jobIDsToCancel))
 	cancelSucceeded := make(map[int64]struct{})
-	for jobID := range jobIDsToCancel {
+
+	cancelJob := func(jobID int64) {
+		if jobID <= 0 {
+			return
+		}
+		if _, ok := cancelSucceeded[jobID]; ok {
+			return
+		}
+		if cancelAttempts[jobID] >= maxCancelAttempts {
+			return
+		}
+
+		cancelAttempts[jobID]++
 		if err := o.sdk.CancelJob(ctx, jobID); err != nil {
 			o.logger.Warn("failed to cancel job", zap.Int64("jobID", jobID), zap.Error(err))
 			if firstErr == nil {
 				firstErr = err
 			}
-			continue
+			return
 		}
 		cancelSucceeded[jobID] = struct{}{}
+	}
+
+	for jobID := range jobIDsToCancel {
+		cancelJob(jobID)
+	}
+
+	// Detached IMPORT INTO jobs might be created slightly after cancellation starts (e.g. concurrent submissions were
+	// cancelled before job IDs were observed/recorded). Poll by group key for a short grace period to avoid leaving
+	// orphan jobs running, even if some jobs are already visible.
+	if statusErr == nil && o.cancelGracePeriod > 0 {
+		deadline := time.Now().Add(o.cancelGracePeriod)
+		for {
+			if time.Now().After(deadline) {
+				break
+			}
+
+			statuses, err := o.sdk.GetJobsByGroup(ctx, groupKey)
+			if err != nil {
+				o.logger.Warn("failed to get group jobs status, will try best effort cancellation", zap.Error(err), zap.String("groupKey", groupKey))
+				break
+			}
+			for _, st := range statuses {
+				statusByID[st.JobID] = st
+				if st.IsCompleted() {
+					continue
+				}
+				cancelJob(st.JobID)
+			}
+
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				break
+			}
+			wait := o.cancelPollInterval
+			if wait > remaining {
+				wait = remaining
+			}
+			timer := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return errors.Trace(ctx.Err())
+			case <-timer.C:
+			}
+		}
 	}
 
 	updateCheckpoint := func(tableName string, jobID int64) {

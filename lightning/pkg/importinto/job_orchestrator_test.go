@@ -112,7 +112,7 @@ func TestJobOrchestratorSubmitAndWait(t *testing.T) {
 				mockCpMgr.EXPECT().Get(gomock.Any(), gomock.Any()).Return(nil, nil)
 				mockSubmitter.EXPECT().SubmitTable(gomock.Any(), gomock.Any()).Return(nil, errors.New("submit error"))
 				mockSubmitter.EXPECT().GetGroupKey().Return("group1")
-				mockSDK.EXPECT().GetJobsByGroup(gomock.Any(), "group1").Return(nil, nil)
+				mockSDK.EXPECT().GetJobsByGroup(gomock.Any(), "group1").Return([]*importsdk.JobStatus{}, nil).Times(2)
 				mockCpMgr.EXPECT().GetCheckpoints(gomock.Any()).Return(nil, nil)
 			},
 			wantErr: true,
@@ -133,7 +133,7 @@ func TestJobOrchestratorSubmitAndWait(t *testing.T) {
 				mockMonitor.EXPECT().WaitForJobs(gomock.Any(), gomock.Any()).Return(errors.New("monitor error"))
 				mockSDK.EXPECT().GetJobsByGroup(gomock.Any(), "group1").Return([]*importsdk.JobStatus{
 					{JobID: 1, Status: "running"},
-				}, nil)
+				}, nil).Times(2)
 				mockSDK.EXPECT().CancelJob(gomock.Any(), int64(1)).Return(nil)
 				mockCpMgr.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, cp *importinto.TableCheckpoint) error {
 					require.Equal(t, common.UniqueTable("db", "t1"), cp.TableName)
@@ -158,13 +158,15 @@ func TestJobOrchestratorSubmitAndWait(t *testing.T) {
 			mockSDK := sdkmock.NewMockSDK(ctrl)
 
 			orchestrator := importinto.NewJobOrchestrator(importinto.OrchestratorConfig{
-				Submitter:         mockSubmitter,
-				CheckpointMgr:     mockCpMgr,
-				SDK:               mockSDK,
-				Monitor:           mockMonitor,
-				SubmitConcurrency: 2,
-				PollInterval:      time.Millisecond,
-				Logger:            log.L(),
+				Submitter:          mockSubmitter,
+				CheckpointMgr:      mockCpMgr,
+				SDK:                mockSDK,
+				Monitor:            mockMonitor,
+				SubmitConcurrency:  2,
+				PollInterval:       time.Millisecond,
+				CancelGracePeriod:  time.Millisecond,
+				CancelPollInterval: time.Second,
+				Logger:             log.L(),
 			})
 
 			tt.setup(mockSubmitter, mockCpMgr, mockMonitor, mockSDK)
@@ -188,13 +190,15 @@ func TestJobOrchestratorSubmissionErrorStillRecordsSubmittedJobs(t *testing.T) {
 	mockSDK := sdkmock.NewMockSDK(ctrl)
 
 	orchestrator := importinto.NewJobOrchestrator(importinto.OrchestratorConfig{
-		Submitter:         mockSubmitter,
-		CheckpointMgr:     mockCpMgr,
-		SDK:               mockSDK,
-		Monitor:           mockMonitor,
-		SubmitConcurrency: 2,
-		PollInterval:      time.Millisecond,
-		Logger:            log.L(),
+		Submitter:          mockSubmitter,
+		CheckpointMgr:      mockCpMgr,
+		SDK:                mockSDK,
+		Monitor:            mockMonitor,
+		SubmitConcurrency:  2,
+		PollInterval:       time.Millisecond,
+		CancelGracePeriod:  time.Millisecond,
+		CancelPollInterval: time.Second,
+		Logger:             log.L(),
 	})
 
 	tables := []*importsdk.TableMeta{
@@ -230,7 +234,7 @@ func TestJobOrchestratorSubmissionErrorStillRecordsSubmittedJobs(t *testing.T) {
 
 	mockSDK.EXPECT().GetJobsByGroup(gomock.Any(), "group1").Return([]*importsdk.JobStatus{
 		{JobID: 1, Status: "running"},
-	}, nil)
+	}, nil).Times(2)
 	mockSDK.EXPECT().CancelJob(gomock.Any(), int64(1)).Return(nil)
 	mockCpMgr.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, cp *importinto.TableCheckpoint) error {
 		require.Equal(t, common.UniqueTable("db", "t1"), cp.TableName)
@@ -256,13 +260,15 @@ func TestJobOrchestratorCancel(t *testing.T) {
 	logger := log.L()
 
 	orchestrator := importinto.NewJobOrchestrator(importinto.OrchestratorConfig{
-		Submitter:         mockSubmitter,
-		CheckpointMgr:     mockCpMgr,
-		SDK:               mockSDK,
-		Monitor:           mockMonitor,
-		SubmitConcurrency: 2,
-		PollInterval:      time.Millisecond,
-		Logger:            logger,
+		Submitter:          mockSubmitter,
+		CheckpointMgr:      mockCpMgr,
+		SDK:                mockSDK,
+		Monitor:            mockMonitor,
+		SubmitConcurrency:  2,
+		PollInterval:       time.Millisecond,
+		CancelGracePeriod:  time.Millisecond,
+		CancelPollInterval: time.Second,
+		Logger:             logger,
 	})
 
 	// Setup active jobs
@@ -297,7 +303,7 @@ func TestJobOrchestratorCancel(t *testing.T) {
 	mockSDK.EXPECT().GetJobsByGroup(gomock.Any(), "group1").Return([]*importsdk.JobStatus{
 		{JobID: 1, Status: "finished"},
 		{JobID: 2, Status: "running"},
-	}, nil)
+	}, nil).Times(2)
 
 	// Expect CancelJob only for job 2
 	mockSDK.EXPECT().CancelJob(gomock.Any(), int64(2)).Return(nil)
@@ -334,18 +340,20 @@ func TestJobOrchestratorCancelWithoutActiveJobs(t *testing.T) {
 	mockSDK := sdkmock.NewMockSDK(ctrl)
 
 	orchestrator := importinto.NewJobOrchestrator(importinto.OrchestratorConfig{
-		Submitter:     mockSubmitter,
-		CheckpointMgr: mockCpMgr,
-		SDK:           mockSDK,
-		Monitor:       mockMonitor,
-		Logger:        log.L(),
+		Submitter:          mockSubmitter,
+		CheckpointMgr:      mockCpMgr,
+		SDK:                mockSDK,
+		Monitor:            mockMonitor,
+		CancelGracePeriod:  time.Millisecond,
+		CancelPollInterval: time.Second,
+		Logger:             log.L(),
 	})
 
 	mockSubmitter.EXPECT().GetGroupKey().Return("group1")
 	mockSDK.EXPECT().GetJobsByGroup(gomock.Any(), "group1").Return([]*importsdk.JobStatus{
 		{JobID: 1, Status: "running"},
 		{JobID: 2, Status: "pending"},
-	}, nil)
+	}, nil).Times(2)
 	mockCpMgr.EXPECT().GetCheckpoints(gomock.Any()).Return([]*importinto.TableCheckpoint{
 		{TableName: common.UniqueTable("db", "t1"), JobID: 1, Status: importinto.CheckpointStatusRunning, GroupKey: "group1"},
 		{TableName: common.UniqueTable("db", "t2"), JobID: 2, Status: importinto.CheckpointStatusRunning, GroupKey: "group1"},
@@ -369,6 +377,76 @@ func TestJobOrchestratorCancelWithoutActiveJobs(t *testing.T) {
 		delete(expectedCps, cp.TableName)
 		return nil
 	}).Times(2)
+
+	require.NoError(t, orchestrator.Cancel(context.Background()))
+}
+
+func TestJobOrchestratorCancelRetriesWhenGroupJobsAppearLater(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockSubmitter := mockimport.NewMockJobSubmitter(ctrl)
+	mockCpMgr := mockimport.NewMockCheckpointManager(ctrl)
+	mockMonitor := mockimport.NewMockJobMonitor(ctrl)
+	mockSDK := sdkmock.NewMockSDK(ctrl)
+
+	orchestrator := importinto.NewJobOrchestrator(importinto.OrchestratorConfig{
+		Submitter:          mockSubmitter,
+		CheckpointMgr:      mockCpMgr,
+		SDK:                mockSDK,
+		Monitor:            mockMonitor,
+		CancelGracePeriod:  time.Millisecond,
+		CancelPollInterval: time.Second,
+		Logger:             log.L(),
+	})
+
+	mockSubmitter.EXPECT().GetGroupKey().Return("group1")
+
+	gomock.InOrder(
+		mockSDK.EXPECT().GetJobsByGroup(gomock.Any(), "group1").Return(nil, nil),
+		mockCpMgr.EXPECT().GetCheckpoints(gomock.Any()).Return(nil, nil),
+		mockSDK.EXPECT().GetJobsByGroup(gomock.Any(), "group1").Return([]*importsdk.JobStatus{
+			{JobID: 1, Status: "running"},
+		}, nil),
+		mockSDK.EXPECT().CancelJob(gomock.Any(), int64(1)).Return(nil),
+	)
+
+	require.NoError(t, orchestrator.Cancel(context.Background()))
+}
+
+func TestJobOrchestratorCancelCancelsJobsAppearingLaterEvenWhenSomeVisible(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockSubmitter := mockimport.NewMockJobSubmitter(ctrl)
+	mockCpMgr := mockimport.NewMockCheckpointManager(ctrl)
+	mockMonitor := mockimport.NewMockJobMonitor(ctrl)
+	mockSDK := sdkmock.NewMockSDK(ctrl)
+
+	orchestrator := importinto.NewJobOrchestrator(importinto.OrchestratorConfig{
+		Submitter:          mockSubmitter,
+		CheckpointMgr:      mockCpMgr,
+		SDK:                mockSDK,
+		Monitor:            mockMonitor,
+		CancelGracePeriod:  time.Millisecond,
+		CancelPollInterval: time.Second,
+		Logger:             log.L(),
+	})
+
+	mockSubmitter.EXPECT().GetGroupKey().Return("group1")
+
+	gomock.InOrder(
+		mockSDK.EXPECT().GetJobsByGroup(gomock.Any(), "group1").Return([]*importsdk.JobStatus{
+			{JobID: 1, Status: "running"},
+		}, nil),
+		mockCpMgr.EXPECT().GetCheckpoints(gomock.Any()).Return(nil, nil),
+		mockSDK.EXPECT().CancelJob(gomock.Any(), int64(1)).Return(nil),
+		mockSDK.EXPECT().GetJobsByGroup(gomock.Any(), "group1").Return([]*importsdk.JobStatus{
+			{JobID: 1, Status: "running"},
+			{JobID: 2, Status: "running"},
+		}, nil),
+		mockSDK.EXPECT().CancelJob(gomock.Any(), int64(2)).Return(nil),
+	)
 
 	require.NoError(t, orchestrator.Cancel(context.Background()))
 }
