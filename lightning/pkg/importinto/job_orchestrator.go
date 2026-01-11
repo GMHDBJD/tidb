@@ -105,6 +105,15 @@ func (o *DefaultJobOrchestrator) SubmitAndWait(ctx context.Context, tables []*im
 	// Phase 1: Submit all jobs
 	jobs, err := o.submitAllJobs(ctx, tables)
 	if err != nil {
+		o.activeJobs = jobs
+		if !common.IsContextCanceledError(err) {
+			o.logger.Warn("job submission failed, cancelling submitted jobs", zap.Error(err), zap.Int("submitted", len(jobs)))
+			cancelCtx, cancel := context.WithTimeout(context.Background(), cancelTimeout)
+			defer cancel()
+			if cancelErr := o.Cancel(cancelCtx); cancelErr != nil {
+				o.logger.Warn("failed to cancel jobs after submission error", zap.Error(cancelErr))
+			}
+		}
 		return errors.Annotate(err, "submit jobs")
 	}
 
@@ -326,7 +335,9 @@ func (o *DefaultJobOrchestrator) submitAllJobs(ctx context.Context, tables []*im
 					return errors.Annotatef(err, "submit table %s.%s", table.Database, table.Table)
 				}
 
-				if err := o.recordSubmission(egCtx, job); err != nil {
+				cpCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cancelTimeout)
+				defer cancel()
+				if err := o.recordSubmission(cpCtx, job); err != nil {
 					return errors.Annotatef(err, "record submission for %s.%s", table.Database, table.Table)
 				}
 			}
@@ -338,11 +349,8 @@ func (o *DefaultJobOrchestrator) submitAllJobs(ctx context.Context, tables []*im
 		})
 	}
 
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	return jobs, nil
+	err := eg.Wait()
+	return jobs, err
 }
 
 func (o *DefaultJobOrchestrator) recordSubmission(ctx context.Context, job *ImportJob) error {
