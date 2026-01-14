@@ -233,6 +233,29 @@ func TestSchemaImporter(t *testing.T) {
 		require.NoError(t, os.Remove(path.Join(tempDir, fileNameV1)))
 		require.NoError(t, os.Remove(path.Join(tempDir, fileNameV2)))
 	})
+
+	t.Run("table: skip on create error if table exists", func(t *testing.T) {
+		importer2 := NewSchemaImporter(logger, mysql.SQLMode(0), db, store, 1)
+		mock.ExpectQuery(`information_schema.SCHEMATA`).WillReturnRows(
+			sqlmock.NewRows([]string{"SCHEMA_NAME"}).AddRow("test01"))
+
+		fileNameT1 := "test01.t1-schema.sql"
+		require.NoError(t, os.WriteFile(path.Join(tempDir, fileNameT1), []byte("CREATE table t1(a int);"), 0o644))
+		dbMetas := []*MDDatabaseMeta{
+			{Name: "test01", Tables: []*MDTableMeta{
+				{DB: "test01", Name: "t1", charSet: "auto", SchemaFile: FileInfo{FileMeta: SourceFileMeta{Path: fileNameT1}}},
+			}},
+		}
+
+		mock.ExpectExec("CREATE TABLE IF NOT EXISTS `test01`.`t1`").
+			WillReturnError(errors.New("non retryable create table error (incompatible foreign key)"))
+		mock.ExpectQuery("SHOW CREATE TABLE `test01`.`t1`").
+			WillReturnRows(sqlmock.NewRows([]string{"Table", "Create Table"}).AddRow("t1", "CREATE TABLE `t1` (a int);"))
+
+		require.NoError(t, importer2.Run(ctx, dbMetas))
+		require.NoError(t, mock.ExpectationsWereMet())
+		require.NoError(t, os.Remove(path.Join(tempDir, fileNameT1)))
+	})
 }
 
 func TestSchemaImporterManyTables(t *testing.T) {

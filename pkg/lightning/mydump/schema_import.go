@@ -273,7 +273,22 @@ func (si *SchemaImporter) runCreateTableJob(ctx context.Context, p *parser.Parse
 		}
 		return errors.Trace(err)
 	}
-	return si.runJob(ctx, job, stmts)
+	err = si.runJob(ctx, job, stmts)
+	if err != nil {
+		// if the execution fails, we check again if the table already exists.
+		// this is because TiDB might validate constraints even for IF NOT EXISTS.
+		exist, err2 := si.isTableExist(ctx, job.dbName, job.tblName)
+		if err2 == nil && exist {
+			si.logger.Info("table already exists in downstream, skip",
+				zap.String("db", job.dbName),
+				zap.String("table", job.tblName),
+				zap.Error(err),
+			)
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (si *SchemaImporter) runCommonJob(ctx context.Context, p *parser.Parser, job *schemaJob) error {
